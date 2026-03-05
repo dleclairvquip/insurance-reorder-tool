@@ -65,7 +65,7 @@ def classify_page(text):
 
 # --- SIDEBAR HISTORY ---
 with st.sidebar:
-    st.image("https://vquip.com/wp-content/uploads/2022/07/vQuip-Logo-Blue.png", width=150) # Assuming vQuip logo
+    st.image("https://vquip.com/wp-content/uploads/2022/07/vQuip-Logo-Blue.png", width=200) # Assuming vQuip logo
     st.title("Settings")
     st.write("v1.0.0 - Document Automator")
     st.divider()
