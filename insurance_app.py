@@ -8,27 +8,27 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
-# 1. PAGE CONFIG
-st.set_page_config(page_title="vQuip Master Assembler", page_icon="🛡️", layout="wide")
+# 1. PAGE CONFIG - UPDATED NAME
+st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
 # vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
 
-# 2. MASTER SEQUENCE (Approved Order)
+# 2. MASTER SEQUENCE
 MASTER_ORDER = [
-    "Surplus Lines Disclosure",
-    "Commercial General Liability Quote",
-    "Annual Business Auto Quote",
-    "Blanket Accident - Full Details",
-    "Commercial General Liability Forms & Endorsements",
-    "Annual Business Auto Forms & Endorsements",
-    "Why its important to transfer risk and cost",
-    "OK so how does it work",
-    "Notice of Terrorism Coverage Offering",
-    "The Small Print",
-    "Overall Program Binding"
+    "Surplus Lines Disclosure",                             # [cite: 184]
+    "Commercial General Liability Quote",                   # [cite: 198]
+    "Annual Business Auto Quote",                           # [cite: 219]
+    "Blanket Accident - Full Details",                      # [cite: 238]
+    "Commercial General Liability Forms & Endorsements",    # [cite: 261]
+    "Annual Business Auto Forms & Endorsements",            # [cite: 271]
+    "Why its important to transfer risk and cost",          # [cite: 280]
+    "OK so how does it work",                               # [cite: 317]
+    "Notice of Terrorism Coverage Offering",                # [cite: 334]
+    "The Small Print",                                      # [cite: 366]
+    "Overall Program Binding"                               # [cite: 394]
 ]
 
 # 3. ROBUST EXTRACTION ENGINES
@@ -40,12 +40,11 @@ def get_clean_val(text, label):
     if idx == -1: return "---"
     
     window = clean_text[idx : idx + 200]
-    # Regex for currency, 'Excluded', 'N/A', or date ranges [cite: 2, 3]
     match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}|\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
     return match.group(0) if match else "---"
 
 def extract_clean_address(text):
-    """Captures full address and stops before policy metadata[cite: 2, 3]."""
+    """Captures full address and stops before policy metadata."""
     lines = text.split('\n')
     addr_block = ""
     for i, line in enumerate(lines):
@@ -114,7 +113,7 @@ def generate_exec_summary(data):
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # General Liability Premium Breakdown [cite: 1]
+    # General Liability Premium Breakdown
     gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
     for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
     t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
@@ -123,7 +122,7 @@ def generate_exec_summary(data):
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
-    # Business Auto Premium Breakdown 
+    # Business Auto Premium Breakdown
     au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
     t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
@@ -136,14 +135,14 @@ def generate_exec_summary(data):
     return buffer
 
 # --- MAIN APP ---
-st.title("🛡️ Adventure Shield | Executive Assembler")
+st.title("🛡️ Adventure Shield Proposal Builder") # UPDATED TITLE
 files = st.file_uploader("Upload all Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Processing documents..."):
+    with st.spinner("Building Proposal..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -156,9 +155,8 @@ if files:
     gl_text = text_by_type["Commercial General Liability Quote"]
     auto_text = text_by_type["Annual Business Auto Quote"]
 
-    # Scrape with normalized whitespace 
     s_data = {
-        "Insured": "Midnight Sun ATV/Snowmobile Tours", 
+        "Insured": extract_clean_address(full_text).split('625')[0].strip() or "Midnight Sun ATV/Snowmobile Tours", 
         "Address": extract_clean_address(full_text),
         "Dates": get_clean_val(full_text, "Period of Insurance"),
         "GL_Limits": {
@@ -187,7 +185,7 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee - Annual")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
