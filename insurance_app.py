@@ -23,46 +23,47 @@ MASTER_ORDER = [
 ]
 
 def classify_page(text):
-    """Matches page text with improved flexibility."""
-    # Convert all text to lowercase and remove extra spaces to prevent matching errors
+    """Refined matching based on Midnight Sun document text."""
     t = " ".join(text.lower().split())
     
-    if "surplus lines disclosure" in t: 
+    # 1. Surplus Lines (Catches Alaska, Arizona, etc.)
+    if "surplus lines" in t and ("disclosure" in t or "notice" in t): 
         return "Surplus Lines Disclosure"
     
-    # Using 'general liability' + 'quote' to be safer
-    if "general liability" in t and "quote" in t: 
+    # 2. Quote Pages (Prioritizing 'Commercial General Liability' header)
+    if "commercial general liability" in t and "limit selected" in t: 
         return "Commercial General Liability Quote"
     
-    if "business auto" in t and "quote" in t: 
+    # 3. Business Auto Quote (Look for 'Loss Control Platform' specifically on this page)
+    if "annual business auto" in t and "loss control platform" in t: 
         return "Annual Business Auto Quote"
     
-    if "blanket accident" in t: 
+    # 4. Blanket Accident (Full details header)
+    if "blanket accident" in t and "full details" in t: 
         return "Blanket Accident Quote"
     
-    # Check for the Forms list - looking for 'forms' and 'endorsements'
-    if "general liability" in t and "forms" in t and "endorsements" in t: 
+    # 5. Forms & Endorsements (Distinguishing GL from Auto)
+    if "commercial general liability" in t and "forms & endorsements" in t: 
         return "Commercial General Liability Forms & Endorsements"
         
-    if "business auto" in t and "forms" in t and "endorsements" in t: 
+    if "annual business auto" in t and "forms & endorsements" in t: 
         return "Annual Business Auto Forms & Endorsements"
     
+    # 6. Marketing & Workflow Pages
     if "transfer risk and cost" in t: 
         return "Why its important to transfer risk and cost to my clients"
     
-    if "how does it work" in t: 
+    if "how does it work?" in t: 
         return "OK so how does it work"
     
-    if "terrorism coverage offering" in t: 
+    if "notice of terrorism" in t and "coverage offering" in t: 
         return "Notice of Terrorism Coverage Offering"
     
-    if "small print" in t: 
+    if "the small print" in t: 
         return "The Small Print"
     
-    if "program binding" in t: 
+    if "overall program binding" in t: 
         return "Overall Program Binding"
-    
-    return "Unclassified/Misc"
     
     return "Unclassified/Misc"
 
