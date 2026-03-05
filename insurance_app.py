@@ -181,4 +181,14 @@ if files:
     with colL:
         if st.button("🚀 ASSEMBLE 11-PAGE MASTER PACKAGE"):
             writer = pypdf.PdfWriter()
-            for cat in MASTER_ORDER
+            for cat in MASTER_ORDER:
+                for p in buckets[cat]: writer.add_page(p)
+            for p in buckets["Unclassified/Misc"]: writer.add_page(p)
+            out = io.BytesIO()
+            writer.write(out)
+            st.download_button("💾 DOWNLOAD MASTER PDF", out.getvalue(), f"Package_{s_data['Insured']}.pdf")
+
+    with colR:
+        if st.button("📊 GENERATE EXECUTIVE TOP SHEET"):
+            summary_pdf = create_executive_summary(s_data)
+            st.download_button("💾 DOWNLOAD SUMMARY PDF", summary_pdf, f"Summary_{s_data['Insured']}.pdf")
