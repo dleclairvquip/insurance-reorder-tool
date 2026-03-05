@@ -16,7 +16,7 @@ NAVY = colors.Color(5/255, 18/255, 23/255)
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
 
-# 2. MASTER SEQUENCE
+# 2. MASTER SEQUENCE (Approved Order)
 MASTER_ORDER = [
     "Surplus Lines Disclosure",
     "Commercial General Liability Quote",
@@ -31,30 +31,31 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. EXTRACTION ENGINES
-def get_proximity_val(text, label):
-    """Targeted search for values within a window of the label."""
-    try:
-        idx = text.lower().find(label.lower())
-        if idx == -1: return "---"
-        # Increased window to 300 to capture table columns
-        window = text[idx : idx + 300]
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}|\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
-        return match.group(0) if match else "---"
-    except: return "---"
+# 3. ROBUST EXTRACTION ENGINES
+def get_clean_val(text, label):
+    """Normalizes text and label to find values regardless of line breaks."""
+    clean_text = " ".join(text.split())
+    clean_label = " ".join(label.split())
+    idx = clean_text.lower().find(clean_label.lower())
+    if idx == -1: return "---"
+    
+    window = clean_text[idx : idx + 200]
+    # Regex for currency, 'Excluded', 'N/A', or date ranges [cite: 2, 3]
+    match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}|\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
+    return match.group(0) if match else "---"
 
 def extract_clean_address(text):
-    """Extracts address and cleans metadata."""
+    """Captures full address and stops before policy metadata[cite: 2, 3]."""
     lines = text.split('\n')
-    addr = ""
+    addr_block = ""
     for i, line in enumerate(lines):
         if "address" in line.lower():
-            addr = line.split('Address')[-1].strip().replace(":", "")
-            if i + 1 < len(lines): addr += " " + lines[i+1].strip()
-            if i + 2 < len(lines): addr += " " + lines[i+2].strip()
+            addr_block = line.split('Address')[-1].strip().replace(":", "")
+            for j in range(i+1, min(i+4, len(lines))):
+                addr_block += " " + lines[j].strip()
             break
-    addr = re.split(r'Period of Insurance|Quote Valid|Date Quoted', addr, flags=re.IGNORECASE)[0]
-    return addr.strip()
+    clean_addr = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Date:', addr_block, flags=re.IGNORECASE)[0]
+    return " ".join(clean_addr.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
@@ -92,7 +93,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Section
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -107,13 +108,13 @@ def generate_exec_summary(data):
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Limits Table
+    # Business Auto Limits Table
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # Financial: CGL Premium Breakdown
+    # General Liability Premium Breakdown [cite: 1]
     gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
     for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
     t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
@@ -122,7 +123,7 @@ def generate_exec_summary(data):
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
-    # Financial: Auto Premium Breakdown
+    # Business Auto Premium Breakdown 
     au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
     t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
@@ -140,56 +141,55 @@ files = st.file_uploader("Upload all Quote PDFs", type="pdf", accept_multiple_fi
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
+    text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    # Store text separately by page type for accurate financial extraction
-    text_by_type = {name: "" for name in MASTER_ORDER}
-    text_by_type["Unclassified/Misc"] = ""
-    
-    for f in files:
-        reader = pypdf.PdfReader(f)
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            cat = classify_page(t)
-            text_by_type[cat] += "\n" + t
-            buckets[cat].append(page)
+    with st.spinner("Processing documents..."):
+        for f in files:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                t = page.extract_text() or ""
+                cat = classify_page(t)
+                text_by_type[cat] += "\n" + t
+                buckets[cat].append(page)
 
     full_text = "\n".join(text_by_type.values())
     gl_text = text_by_type["Commercial General Liability Quote"]
     auto_text = text_by_type["Annual Business Auto Quote"]
 
+    # Scrape with normalized whitespace 
     s_data = {
         "Insured": "Midnight Sun ATV/Snowmobile Tours", 
         "Address": extract_clean_address(full_text),
-        "Dates": get_proximity_val(full_text, "Period of Insurance"),
+        "Dates": get_clean_val(full_text, "Period of Insurance"),
         "GL_Limits": {
-            "General Aggregate Limit": get_proximity_val(gl_text, "General Aggregate Limit"),
-            "Each Occurrence Limit": get_proximity_val(gl_text, "Each Occurrence Limit"),
-            "Products-Completed Ops": get_proximity_val(gl_text, "Products - Completed Operations"),
-            "Personal/Advertising": get_proximity_val(gl_text, "Personal and Advertising Injury"),
-            "Damage to Rented Premises": get_proximity_val(gl_text, "Damage to Premises Rented"),
-            "Medical Expense": get_proximity_val(gl_text, "Medical Expense Limit")
+            "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
+            "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
+            "Products-Completed Ops": get_clean_val(gl_text, "Products - Completed Operations"),
+            "Personal/Advertising": get_clean_val(gl_text, "Personal and Advertising Injury"),
+            "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Premises Rented"),
+            "Medical Expense": get_clean_val(gl_text, "Medical Expense Limit")
         },
         "Auto_Limits": {
-            "BI per Person": get_proximity_val(auto_text, "Bodily Injury Liability per Person"),
-            "BI per Accident": get_proximity_val(auto_text, "Bodily Injury Liability per Accident"),
-            "Property Damage per Accident": get_proximity_val(auto_text, "Property Damage Liability per Accident"),
-            "Collision": get_proximity_val(auto_text, "Collision"),
-            "Comprehensive": get_proximity_val(auto_text, "Comprehensive")
+            "BI per Person": get_clean_val(auto_text, "Bodily Injury Liability per Person"),
+            "BI per Accident": get_clean_val(auto_text, "Bodily Injury Liability per Accident"),
+            "Property Damage per Accident": get_clean_val(auto_text, "Property Damage Liability"),
+            "Collision": get_clean_val(auto_text, "Collision"),
+            "Comprehensive": get_clean_val(auto_text, "Comprehensive")
         },
         "GL_Costs": {
-            "Premium": get_proximity_val(gl_text, "Premium"),
-            "Surplus Lines Tax": get_proximity_val(gl_text, "Surplus Lines Tax:"),
-            "Stamping Fee": get_proximity_val(gl_text, "Stamping Fee"),
-            "vQuip Platform Fee": get_proximity_val(gl_text, "vQuip Platform Fee")
+            "Premium": get_clean_val(gl_text, "Premium"),
+            "Surplus Lines Tax": get_clean_val(gl_text, "Surplus Lines Tax"),
+            "Stamping Fee": get_clean_val(gl_text, "Stamping Fee"),
+            "vQuip Platform Fee": get_clean_val(gl_text, "vQuip Platform Fee")
         },
-        "GL_Total": get_proximity_val(gl_text, "Total Premium & Taxes / Fees"),
+        "GL_Total": get_clean_val(gl_text, "Total Premium & Taxes / Fees"),
         "Auto_Costs": {
-            "Annual Premium": get_proximity_val(auto_text, "Annual Premium"),
-            "Surplus Lines Tax": get_proximity_val(auto_text, "Surplus Lines Tax"),
-            "Stamping Fee": get_proximity_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_proximity_val(auto_text, "Technology Transaction Fee - Annual")
+            "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
+            "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
+            "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
+            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee - Annual")
         },
-        "Auto_Total": get_proximity_val(auto_text, "Total")
+        "Auto_Total": get_clean_val(auto_text, "Total")
     }
 
     col1, col2 = st.columns(2)
@@ -199,7 +199,6 @@ if files:
             for cat in MASTER_ORDER:
                 for p in buckets[cat]: writer.add_page(p)
             for p in buckets["Unclassified/Misc"]: writer.add_page(p)
-            
             out_buf = io.BytesIO()
             writer.write(out_buf)
             st.download_button("💾 DOWNLOAD PACKAGE", out_buf.getvalue(), "Package.pdf")
