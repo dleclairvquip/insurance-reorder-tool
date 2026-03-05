@@ -9,14 +9,14 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
 # 1. PAGE CONFIG
-st.set_page_config(page_title="vQuip | Adventure Shield Assembler", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="Adventure Shield | Master Assembler", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Theme Colors based on user screenshots
 NAVY = colors.Color(5/255, 18/255, 23/255)
 TEAL = colors.Color(60/255, 148/255, 166/255)
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
 
-# 2. MASTER SEQUENCE LOGIC
+# 2. MASTER SEQUENCE
 MASTER_ORDER = [
     "Surplus Lines Disclosure", "Commercial General Liability Quote",
     "Annual Business Auto Quote", "Blanket Accident Quote",
@@ -27,165 +27,157 @@ MASTER_ORDER = [
     "The Small Print", "Overall Program Binding"
 ]
 
-# 3. SMART EXTRACTION HELPERS
-def get_amount_near(text, label):
-    """Finds a dollar amount within a window of a specific label."""
-    idx = text.lower().find(label.lower())
-    if idx == -1: return "---"
-    window = text[max(0, idx-80) : min(len(text), idx+150)]
-    amounts = re.findall(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
-    return amounts[0] if amounts else "---"
-
-def extract_field(text, marker):
-    """Captures text values like Insured Name or Address."""
+# 3. ADVANCED EXTRACTION HELPERS
+def get_val_after(text, label):
+    """Targeted search for values in tabular PDF layouts."""
     try:
-        if marker.lower() in text.lower():
-            start = text.lower().find(marker.lower()) + len(marker)
-            end = text.find("\n", start)
-            return text[start:end].strip().replace(":", "").replace("[", "").replace("]", "")
-    except: return "Not Found"
+        idx = text.lower().find(label.lower())
+        if idx == -1: return "---"
+        window = text[idx : idx + 150]
+        # Regex targets: currency, 'Excluded', 'N/A', or date ranges
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A|\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+        return match.group(0) if match else "---"
+    except: return "---"
+
+def extract_multi_line(text, label):
+    """Handles fields that wrap or have significant whitespace after the label."""
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        if label.lower() in line.lower():
+            content = line[line.lower().find(label.lower()) + len(label):].strip()
+            # If the value is on the line below (common in PDF parsing)
+            if i + 1 < len(lines) and len(content) < 3:
+                content = lines[i+1].strip()
+            return content.replace(":", "").strip()
     return "Not Found"
 
 def classify_page(text):
+    """Categorizes pages based on proven keyword triggers."""
     t = " ".join(text.lower().split())
-    # Optimized for AdventSure & vQuip formats
     if "surplus lines" in t and ("disclosure" in t or "notice" in t): return "Surplus Lines Disclosure"
-    if "insurance quotation" in t or ("commercial general liability" in t and "limit" in t): return "Commercial General Liability Quote"
-    if "annual business auto" in t and "quote" in t: return "Annual Business Auto Quote"
-    if "accident protection program" in t or "blanket accident" in t: return "Blanket Accident Quote"
-    if "binder agreement" in t or "program binding" in t: return "Overall Program Binding"
+    if "insurance quotation" in t or ("commercial general liability" in t and "limit" in t and "forms" not in t): return "Commercial General Liability Quote"
+    if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
+    if "accident protection" in t or "blanket accident" in t: return "Blanket Accident Quote"
     if "forms" in t and "endorsements" in t:
-        if "auto" in t: return "Annual Business Auto Forms & Endorsements"
-        return "Commercial General Liability Forms & Endorsements"
+        return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
+    if "transfer risk" in t: return "Why its important to transfer risk and cost to my clients"
+    if "how does it work" in t: return "OK so how does it work"
+    if "terrorism" in t: return "Notice of Terrorism Coverage Offering"
+    if "small print" in t: return "The Small Print"
+    if "binding" in t or "binder" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
-# 4. PROFESSIONAL PDF GENERATOR
-def create_master_summary_page(data):
+# 4. SUMMARY GENERATOR
+def create_master_summary(data):
+    """Builds the separate 1-page summary PDF."""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=LETTER, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
     
-    # Custom Styles
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, textColor=colors.black, spaceAfter=20)
-    label_style = ParagraphStyle('Label', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=2)
-    val_style = ParagraphStyle('Value', parent=styles['Normal'], fontSize=12, fontName='Helvetica', spaceAfter=15)
-    
-    elements = []
-
-    # --- Header: Account Info (Image 30dcef style) ---
-    elements.append(Paragraph("Name Insured", label_style))
-    elements.append(Paragraph(data['Insured'], val_style))
-    elements.append(Paragraph("Address", label_style))
-    elements.append(Paragraph(data['Address'], val_style))
-    elements.append(Paragraph("Period of Insurance", label_style))
-    elements.append(Paragraph(data['Dates'], val_style))
-    elements.append(Spacer(1, 20))
-
-    # --- GL Limits Table (Image 3136e3 style) ---
-    gl_data = [["Coverage", "Limit of Liability"]]
-    for k, v in data['GL_Limits'].items(): gl_data.append([k, v])
-    
-    gl_table = Table(gl_data, colWidths=[380, 120])
-    gl_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), NAVY),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+    label_s = ParagraphStyle('Label', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=2)
+    val_s = ParagraphStyle('Value', parent=styles['Normal'], fontSize=12, fontName='Helvetica', spaceAfter=12)
+    header_s = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), NAVY), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_GRAY])
-    ]))
-    elements.append(gl_table)
-    elements.append(Spacer(1, 25))
+    ])
 
-    # --- Premium Summary (Image 30dd4c / 30dd84 style) ---
-    elements.append(Paragraph("Premium & Fee Breakdown", label_style))
-    cost_data = [["Description", "Paid in Full"]]
+    elements = []
+    # Identity Block
+    elements.append(Paragraph("Name Insured", label_s))
+    elements.append(Paragraph(data['Insured'], val_s))
+    elements.append(Paragraph("Address", label_s))
+    elements.append(Paragraph(data['Address'], val_s))
+    elements.append(Paragraph("Period of Insurance", label_s))
+    elements.append(Paragraph(data['Dates'], val_s))
+    elements.append(Spacer(1, 15))
+
+    # CGL Section
+    gl_data = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): gl_data.append([k, v])
+    t_gl = Table(gl_data, colWidths=[380, 120])
+    t_gl.setStyle(header_s)
+    elements.append(t_gl)
+    elements.append(Spacer(1, 15))
+
+    # Auto Section
+    auto_data = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): auto_data.append([k, v])
+    t_auto = Table(auto_data, colWidths=[380, 120])
+    t_auto.setStyle(header_s)
+    elements.append(t_auto)
+    elements.append(Spacer(1, 15))
+
+    # Premium Summary
+    cost_data = [["Premium Payment Plans", "Paid-in-Full"]]
     for k, v in data['Costs'].items(): cost_data.append([k, v])
-    cost_data.append(["TOTAL PACKAGE COST", data['Total']])
-    
-    cost_table = Table(cost_data, colWidths=[380, 120])
-    cost_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), TEAL),
-        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('BACKGROUND', (0, -1), (-1, -1), NAVY),
-        ('TEXTCOLOR', (0, -1), (-1, -1), colors.white),
-        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
-    ]))
-    elements.append(cost_table)
+    t_cost = Table(cost_data, colWidths=[380, 120])
+    t_cost.setStyle(header_s)
+    elements.append(t_cost)
 
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
-# --- MAIN APP INTERFACE ---
-st.title("🛡️ Adventure Shield Master Assembler")
-st.markdown("Upload all carrier documents. This tool builds a **Summary Top-Sheet** and reorders your **11-page package** automatically.")
+# --- MAIN APP ---
+st.title("🛡️ Adventure Shield | Master Assembler")
+files = st.file_uploader("Upload all PDFs", type="pdf", accept_multiple_files=True)
 
-uploaded_files = st.file_uploader("Drop Quote PDFs here", type="pdf", accept_multiple_files=True)
-
-if uploaded_files:
+if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
     full_text = ""
     
-    with st.spinner("Analyzing document structure..."):
-        for f in uploaded_files:
+    with st.spinner("Processing documents..."):
+        for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
                 txt = page.extract_text() or ""
                 full_text += "\n" + txt
                 buckets[classify_page(txt)].append(page)
 
-    # DATA EXTRACTION
+    # DATA EXTRACTION Logic
     s_data = {
-        "Insured": extract_field(full_text, "For") if "For:" in full_text else extract_field(full_text, "Name Insured"),
-        "Address": extract_field(full_text, "Address") if "Address" in full_text else "Refer to Quote",
-        "Dates": extract_field(full_text, "Policy Term") if "Term" in full_text else extract_field(full_text, "Period of Insurance"),
+        "Insured": extract_multi_line(full_text, "Name Insured"),
+        "Address": extract_multi_line(full_text, "Address"),
+        "Dates": get_val_after(full_text, "Period of Insurance"),
         "GL_Limits": {
-            "General Aggregate": get_amount_near(full_text, "General Aggregate"),
-            "Each Occurrence": get_amount_near(full_text, "Each Occurrence"),
-            "Products/Completed Ops": get_amount_near(full_text, "Products"),
-            "Medical Expense": get_amount_near(full_text, "Medical Expense")
+            "General Aggregate Limit": get_val_after(full_text, "General Aggregate Limit"),
+            "Each Occurrence Limit": get_val_after(full_text, "Each Occurrence Limit"),
+            "Products-Completed Ops": get_val_after(full_text, "Products - Completed Operations"),
+            "Medical Expense Limit": get_val_after(full_text, "Medical Expense Limit")
+        },
+        "Auto_Limits": {
+            "Bodily Injury per Person": get_val_after(full_text, "Bodily Injury Liability per Person"),
+            "Bodily Injury per Accident": get_val_after(full_text, "Bodily Injury Liability per Accident"),
+            "Property Damage": get_val_after(full_text, "Property Damage Liability"),
+            "Collision": get_val_after(full_text, "Collision"),
+            "Comprehensive": get_val_after(full_text, "Comprehensive")
         },
         "Costs": {
-            "Carrier Premium": get_amount_near(full_text, "General Liability"),
-            "Surplus Lines Tax": get_amount_near(full_text, "Surplus Lines Tax"),
-            "Stamping Fees": get_amount_near(full_text, "Stamp Fee"),
-            "Policy/Admin Fees": get_amount_near(full_text, "Policy Fee")
-        },
-        "Total": get_amount_near(full_text, "TOTAL PREMIUM COST") if "TOTAL PREMIUM" in full_text else get_amount_near(full_text, "Total Premium & Taxes")
+            "Annual Premium": get_val_after(full_text, "Annual Premium"),
+            "Surplus Lines Tax": get_val_after(full_text, "Surplus Lines Tax"),
+            "vQuip Platform Fee": get_val_after(full_text, "vQuip Platform Fee"),
+            "TOTAL ESTIMATED COST": get_val_after(full_text, "Total Premium & Taxes / Fees")
+        }
     }
 
-    # DASHBOARD & ACTIONS
     st.header(f"Account: {s_data['Insured']}")
-    if st.button("🚀 GENERATE COMPLETE ADVENTURE SHIELD PACKAGE"):
-        # 1. Create Summary Page
-        summary_pdf_stream = create_master_summary_page(s_data)
-        summary_reader = pypdf.PdfReader(summary_pdf_stream)
-        
-        # 2. Start Assembly
-        writer = pypdf.PdfWriter()
-        writer.add_page(summary_reader.pages[0]) # Add Summary First
-        
-        # 3. Add Carrier Pages in Order
-        for cat in MASTER_ORDER:
-            for p in buckets[cat]: writer.add_page(p)
-        for p in buckets["Unclassified/Misc"]: writer.add_page(p)
-        
-        final_out = io.BytesIO()
-        writer.write(final_out)
-        
-        st.balloons()
-        st.download_button(
-            label="💾 DOWNLOAD COMPLETE PACKAGE (Summary + Quote Docs)",
-            data=final_out.getvalue(),
-            file_name=f"Adventure_Shield_{s_data['Insured']}.pdf",
-            mime="application/pdf"
-        )
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 ASSEMBLE 11-PAGE QUOTE PACKAGE"):
+            writer = pypdf.PdfWriter()
+            for cat in MASTER_ORDER:
+                for p in buckets[cat]: writer.add_page(p)
+            for p in buckets["Unclassified/Misc"]: writer.add_page(p)
+            
+            final_out = io.BytesIO()
+            writer.write(final_out)
+            st.download_button("💾 DOWNLOAD MASTER PDF", final_out.getvalue(), f"Package_{s_data['Insured']}.pdf")
+            
+    with col2:
+        if st.button("📊 GENERATE SEPARATE SUMMARY PAGE"):
+            summary_pdf = create_master_summary(s_data)
+            st.download_button("💾 DOWNLOAD SUMMARY PDF", summary_pdf, f"Executive_Summary_{s_data['Insured']}.pdf")
