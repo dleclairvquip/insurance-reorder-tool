@@ -3,41 +3,32 @@ import pypdf
 import io
 from datetime import datetime
 
-# 1. ENHANCED PAGE CONFIG
+# 1. THEME & PAGE CONFIG
 st.set_page_config(
-    page_title="vQuip | Document Assembler",
+    page_title="Adventure Shield Assembler",
     page_icon="🛡️",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# 2. CUSTOM CSS (The "Cool" Factor)
+# Custom CSS for a clean, professional look
 st.markdown("""
     <style>
-    .main {
-        background-color: #f5f7f9;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 5px;
-        height: 3em;
+    .stApp { background-color: #f8f9fa; }
+    div.stButton > button:first-child {
         background-color: #004a99;
         color: white;
+        border: None;
+        padding: 0.6rem 2rem;
         font-weight: bold;
     }
-    .css-10trblm {
-        color: #004a99;
-    }
-    .stMetric {
-        background-color: #ffffff;
-        padding: 15px;
-        border-radius: 10px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    div.stButton > button:hover {
+        background-color: #003366;
+        border: None;
     }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. MASTER ORDER (Same as before)
+# 2. SEQUENCE LOGIC
 MASTER_ORDER = [
     "Surplus Lines Disclosure", "Commercial General Liability Quote",
     "Annual Business Auto Quote", "Blanket Accident Quote",
@@ -63,63 +54,53 @@ def classify_page(text):
     if "program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
-# --- SIDEBAR HISTORY ---
+# --- SIDEBAR (No Logo) ---
 with st.sidebar:
-    st.image("https://vquip.com/wp-content/uploads/2022/07/vQuip-Logo-Blue.png", width=200) # Assuming vQuip logo
-    st.title("Settings")
-    st.write("v1.0.0 - Document Automator")
+    st.markdown("### **Operation Control**")
+    st.caption("v1.2.1 - Clean Edition")
     st.divider()
-    st.info("Ensure all 3 source PDFs are uploaded for a complete package.")
+    st.write("This tool automatically scans PDF content to build the standard Adventure Shield package.")
+    st.write("Upload all source documents on the right to begin.")
 
-# --- MAIN UI ---
-st.title("🛡️ Adventure Shield | Package Assembler")
-st.subheader("Automated Insurance Document Reordering")
+# --- MAIN APP ---
+st.title("🛡️ Adventure Shield Assembler")
+st.markdown("Drag and drop your source documents to generate a finalized quote package.")
 
-uploaded_files = st.file_uploader("", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("", type="pdf", accept_multiple_files=True)
 
-if uploaded_files:
+if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
     
-    with st.status("Analyzing documents...", expanded=True) as status:
-        for uploaded_file in uploaded_files:
-            reader = pypdf.PdfReader(uploaded_file)
-            for i, page in enumerate(reader.pages):
-                category = classify_page(page.extract_text() or "")
-                buckets[category].append(page)
-        status.update(label="Analysis complete!", state="complete", expanded=False)
+    with st.spinner("Analyzing PDF architecture..."):
+        for f in files:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                cat = classify_page(page.extract_text() or "")
+                buckets[cat].append(page)
 
-    # SHOW DASHBOARD
-    col1, col2, col3 = st.columns(3)
-    total_pages = sum(len(v) for v in buckets.values())
-    classified_count = total_pages - len(buckets["Unclassified/Misc"])
+    # Dashboard Metrics
+    m1, m2, m3 = st.columns(3)
+    total = sum(len(p) for p in buckets.values())
+    unclassified = len(buckets["Unclassified/Misc"])
     
-    col1.metric("Total Pages Found", total_pages)
-    col2.metric("Successfully Identified", f"{classified_count}/{total_pages}")
-    col3.metric("Unclassified", len(buckets["Unclassified/Misc"]))
+    with m1: st.metric("Pages Detected", total)
+    with m2: st.metric("Identification Rate", f"{((total-unclassified)/total)*100:.0f}%")
+    with m3: st.metric("Manual Review Required", unclassified)
 
-    with st.expander("🔍 View Page-by-Page Breakdown"):
-        # Build simple list for table
-        data = []
-        for cat, pages in buckets.items():
-            if pages: data.append({"Category": cat, "Pages Found": len(pages)})
-        st.table(data)
-
-    if st.button("🚀 BUILD FINAL PACKAGE"):
+    if st.button("🚀 ASSEMBLE ADVENTURE SHIELD PACKAGE"):
         writer = pypdf.PdfWriter()
-        for category in MASTER_ORDER:
-            for page in buckets[category]:
-                writer.add_page(page)
-        for page in buckets["Unclassified/Misc"]:
-            writer.add_page(page)
-            
-        output = io.BytesIO()
-        writer.write(output)
+        for cat in MASTER_ORDER:
+            for p in buckets[cat]: writer.add_page(p)
+        for p in buckets["Unclassified/Misc"]: writer.add_page(p)
+        
+        final_pdf = io.BytesIO()
+        writer.write(final_pdf)
         
         st.balloons()
         st.download_button(
-            label="💾 DOWNLOAD REORDERED PACKAGE",
-            data=output.getvalue(),
-            file_name=f"AdventureShield_Package_{datetime.now().strftime('%Y%m%d')}.pdf",
+            "💾 DOWNLOAD COMPLETED PACKAGE",
+            data=final_pdf.getvalue(),
+            file_name=f"Insurance_Package_{datetime.now().strftime('%m-%d-%Y')}.pdf",
             mime="application/pdf"
         )
