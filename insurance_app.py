@@ -14,12 +14,12 @@ st.set_page_config(page_title="Adventure Shield Toolset", page_icon="🛡️", l
 st.markdown("""
     <style>
     .stApp { background-color: #f8f9fa; }
-    div.stButton > button:first-child { background-color: #004a99; color: white; font-weight: bold; width: 100%; border-radius: 5px; height: 3em; }
+    div.stButton > button:first-child { background-color: #004a99; color: white; font-weight: bold; width: 100%; border-radius: 5px; height: 3.5em; }
     .stMetric { background-color: #ffffff; padding: 15px; border-radius: 10px; border: 1px solid #e1e4e8; }
     </style>
     """, unsafe_allow_html=True)
 
-# 2. CONSTANTS & ORDERING
+# 2. CONSTANTS
 MASTER_ORDER = [
     "Surplus Lines Disclosure", "Commercial General Liability Quote",
     "Annual Business Auto Quote", "Blanket Accident Quote",
@@ -30,17 +30,25 @@ MASTER_ORDER = [
     "The Small Print", "Overall Program Binding"
 ]
 
-# 3. EXTRACTION & CLASSIFICATION ENGINES
-def extract_value(text, marker, end_marker="\n"):
+# 3. EXTRACTION ENGINES
+def get_amount_near(text, label):
+    """Finds a dollar amount within a 100-character window of a label."""
+    idx = text.lower().find(label.lower())
+    if idx == -1: return "---"
+    # Look 50 characters before and 100 characters after the label
+    window = text[max(0, idx-60) : min(len(text), idx+120)]
+    amounts = re.findall(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?', window)
+    return amounts[0] if amounts else "---"
+
+def extract_label_value(text, marker):
+    """Standard extraction for non-currency text fields."""
     try:
         if marker.lower() in text.lower():
             start = text.lower().find(marker.lower()) + len(marker)
-            # Find the end of the line or a specific marker
-            end = text.find(end_marker, start)
-            if end == -1: end = start + 50 # Fallback
+            end = text.find("\n", start)
             return text[start:end].strip().replace(":", "").replace("[", "").replace("]", "")
-    except: return "---"
-    return "---"
+    except: return "Not Found"
+    return "Not Found"
 
 def classify_page(text):
     t = " ".join(text.lower().split())
@@ -57,71 +65,51 @@ def classify_page(text):
     if "overall program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
-# 4. EXECUTIVE PDF GENERATOR
+# 4. PDF SUMMARY GENERATOR
 def create_executive_summary(data):
     buffer = io.BytesIO()
     p = canvas.Canvas(buffer, pagesize=LETTER)
     width, height = LETTER
 
-    # Header section
-    p.setFont("Helvetica-Bold", 16)
+    p.setFont("Helvetica-Bold", 18)
     p.drawString(40, height - 50, "INSURANCE QUOTATION SUMMARY")
     p.setFont("Helvetica", 10)
-    p.drawString(40, height - 65, f"Generated: {datetime.now().strftime('%B %d, %Y')}")
+    p.drawString(40, height - 65, f"Date: {datetime.now().strftime('%B %d, %Y')}")
     
-    # Client Info Box
     p.setStrokeColorRGB(0, 0.29, 0.6)
     p.rect(40, height - 120, width - 80, 45, stroke=1, fill=0)
     p.setFont("Helvetica-Bold", 11)
-    p.drawString(50, height - 95, f"FOR: {data['Insured']}")
+    p.drawString(50, height - 95, f"INSURED: {data['Insured']}")
     p.setFont("Helvetica", 10)
-    p.drawString(50, height - 110, f"POLICY TERM: {data['Dates']}")
+    p.drawString(50, height - 110, f"TERM: {data['Dates']}")
 
-    # GL Section
+    sections = [
+        ("COMMERCIAL GENERAL LIABILITY", data['GL_Limits'], data['GL_Premium']),
+        ("ANNUAL BUSINESS AUTO / ACCIDENT", data['Auto_Limits'], data['Auto_Premium'])
+    ]
+
     y = height - 150
-    p.setFont("Helvetica-Bold", 12)
-    p.setFillColorRGB(0, 0.29, 0.6)
-    p.drawString(40, y, "COMMERCIAL GENERAL LIABILITY")
-    p.setFillColor(colors.black)
-    
-    y -= 20
-    p.setFont("Helvetica", 10)
-    for label, val in data['GL_Limits'].items():
-        p.drawString(60, y, label)
-        p.drawRightString(width - 60, y, str(val))
+    for title, limits, prem in sections:
+        y -= 25
+        p.setFont("Helvetica-Bold", 12)
+        p.setFillColorRGB(0, 0.29, 0.6)
+        p.drawString(40, y, title)
+        p.setFillColor(colors.black)
+        y -= 20
+        p.setFont("Helvetica", 10)
+        for label, val in limits.items():
+            p.drawString(60, y, label)
+            p.drawRightString(width - 60, y, str(val))
+            y -= 15
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(60, y, "Estimated Section Premium:")
+        p.drawRightString(width - 60, y, prem)
         y -= 15
 
-    # Auto Section
-    y -= 15
-    p.setFont("Helvetica-Bold", 12)
-    p.setFillColorRGB(0, 0.29, 0.6)
-    p.drawString(40, y, "ANNUAL BUSINESS AUTO")
-    p.setFillColor(colors.black)
-    
-    y -= 20
-    p.setFont("Helvetica", 10)
-    for label, val in data['Auto_Limits'].items():
-        p.drawString(60, y, label)
-        p.drawRightString(width - 60, y, str(val))
-        y -= 15
-
-    # Totals Section
-    y -= 30
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(40, y, "FINANCIAL SUMMARY")
+    y -= 40
+    p.setFont("Helvetica-Bold", 14)
+    p.drawString(40, y, "TOTAL ESTIMATED PACKAGE COST")
     p.line(40, y - 5, width - 40, y - 5)
-    
-    y -= 25
-    p.setFont("Helvetica", 11)
-    p.drawString(60, y, "General Liability Premium")
-    p.drawRightString(width - 60, y, data['GL_Premium'])
-    y -= 20
-    p.drawString(60, y, "Business Auto Premium")
-    p.drawRightString(width - 60, y, data['Auto_Premium'])
-    
-    y -= 30
-    p.setFont("Helvetica-Bold", 13)
-    p.drawString(60, y, "ESTIMATED PACKAGE TOTAL")
     p.drawRightString(width - 60, y, data['Total_Cost'])
 
     p.showPage()
@@ -129,82 +117,68 @@ def create_executive_summary(data):
     buffer.seek(0)
     return buffer
 
-# --- MAIN APP INTERFACE ---
+# --- MAIN APP ---
 st.title("🛡️ Adventure Shield Toolset")
-st.markdown("Upload your quote documents to generate the finalized package and executive summary.")
-
-files = st.file_uploader("Upload PDF Documents", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload all Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
     
-    # Universal Data Scraper
     s_data = {
-        "Insured": "Not Found", "Dates": "Not Found", "Total_Cost": "$0.00",
-        "GL_Premium": "$0.00", "Auto_Premium": "$0.00",
+        "Insured": "---", "Dates": "---", "Total_Cost": "---",
+        "GL_Premium": "---", "Auto_Premium": "---",
         "GL_Limits": {}, "Auto_Limits": {}
     }
 
-    with st.spinner("Processing documents and extracting data..."):
-        full_text_dump = ""
+    with st.spinner("Analyzing Architecture & Extracting Data..."):
+        full_text = ""
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
                 text = page.extract_text() or ""
-                full_text_dump += text
-                
-                # Sort page for reordering
+                full_text += " " + text
                 cat = classify_page(text)
                 buckets[cat].append(page)
 
-        # Extraction Logic (Supporting both carrier formats)
-        t_low = full_text_dump.lower()
+        # Unified Extraction Logic
+        # 1. Identity
+        if "for:" in full_text.lower(): s_data["Insured"] = extract_label_value(full_text, "For:")
+        elif "name insured" in full_text.lower(): s_data["Insured"] = extract_label_value(full_text, "Name Insured")
         
-        # Insured & Term
-        if "for:" in t_low: s_data["Insured"] = extract_value(full_text_dump, "For:")
-        elif "name insured" in t_low: s_data["Insured"] = extract_value(full_text_dump, "Name Insured")
-        
-        if "policy term:" in t_low: s_data["Dates"] = extract_value(full_text_dump, "Policy Term:")
-        elif "period of insurance" in t_low: s_data["Dates"] = extract_value(full_text_dump, "Period of Insurance")
+        if "policy term:" in full_text.lower(): s_data["Dates"] = extract_label_value(full_text, "Policy Term:")
+        elif "period of insurance" in full_text.lower(): s_data["Dates"] = extract_label_value(full_text, "Period of Insurance")
 
-        # Limits (CGL)
-        if "general aggregate" in t_low:
-            s_data["GL_Limits"]["General Aggregate"] = extract_value(full_text_dump, "General Aggregate")
-            s_data["GL_Limits"]["Each Occurrence"] = extract_value(full_text_dump, "Each Occurrence")
-        
-        # Limits (Auto)
-        if "bodily injury liability per person" in t_low:
-            s_data["Auto_Limits"]["BI per Person"] = extract_value(full_text_dump, "Bodily Injury Liability per Person")
-            s_data["Auto_Limits"]["Property Damage"] = extract_value(full_text_dump, "Property Damage Liability per Accident")
+        # 2. GL Data
+        s_data["GL_Limits"]["General Aggregate"] = get_amount_near(full_text, "General Aggregate")
+        s_data["GL_Limits"]["Each Occurrence"] = get_amount_near(full_text, "Each Occurrence")
+        s_data["GL_Premium"] = get_amount_near(full_text, "General Liability")
 
-        # Premium Logic
-        prices = re.findall(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?', full_text_dump)
-        if "total premium cost" in t_low: s_data["Total_Cost"] = prices[0] if prices else "$0.00"
-        
-    # DISPLAY DASHBOARD
+        # 3. Auto/Accident Data
+        if "maximum medical expense" in full_text.lower():
+            s_data["Auto_Limits"]["Max Medical"] = get_amount_near(full_text, "Maximum Medical Expense Benefit")
+            s_data["Auto_Limits"]["Deductible"] = get_amount_near(full_text, "Deductible Amount per Claim")
+            s_data["Auto_Premium"] = get_amount_near(full_text, "Accident Medical")
+        else:
+            s_data["Auto_Limits"]["BI per Person"] = get_amount_near(full_text, "Bodily Injury Liability per Person")
+            s_data["Auto_Premium"] = get_amount_near(full_text, "Annual Business Auto")
+
+        # 4. Total Cost
+        s_data["Total_Cost"] = get_amount_near(full_text, "TOTAL PREMIUM COST")
+        if s_data["Total_Cost"] == "---":
+            s_data["Total_Cost"] = get_amount_near(full_text, "Total Premium Including")
+
+    # DASHBOARD
     st.header(f"Account: {s_data['Insured']}")
-    m1, m2, m3 = st.columns(3)
-    m1.metric("Total Cost", s_data["Total_Cost"])
-    m2.metric("Term", s_data["Dates"])
-    m3.metric("Pages Analyzed", sum(len(p) for p in buckets.values()))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Package Cost", s_data["Total_Cost"])
+    c2.metric("Term", s_data["Dates"])
+    c3.metric("Pages Sorted", sum(len(p) for p in buckets.values()))
 
     st.divider()
     
-    # ACTIONS
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("🚀 GENERATE FULL 11-PAGE PACKAGE"):
+    colL, colR = st.columns(2)
+    with colL:
+        if st.button("🚀 ASSEMBLE 11-PAGE MASTER PACKAGE"):
             writer = pypdf.PdfWriter()
-            for cat in MASTER_ORDER:
-                for p in buckets[cat]: writer.add_page(p)
-            for p in buckets["Unclassified/Misc"]: writer.add_page(p)
-            
-            final_out = io.BytesIO()
-            writer.write(final_out)
-            st.download_button("💾 DOWNLOAD FULL PDF", final_out.getvalue(), "Full_Adventure_Shield.pdf")
-
-    with c2:
-        if st.button("📊 GENERATE 1-PAGE TOP SHEET"):
-            summary_buf = create_executive_summary(s_data)
-            st.download_button("💾 DOWNLOAD SUMMARY PDF", summary_buf, "Quote_Summary.pdf")
+            for cat in MASTER_ORDER
