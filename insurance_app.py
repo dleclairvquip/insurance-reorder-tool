@@ -13,11 +13,11 @@ MASTER_ORDER = [
     "Commercial General Liability Quote",
     "Annual Business Auto Quote",
     "Blanket Accident Quote",
-    "Commercial General Liability Forms & Endorsements",  # Now comes first
-    "Annual Business Auto Forms & Endorsements",         # Now comes second
+    "Commercial General Liability Forms & Endorsements",
+    "Annual Business Auto Forms & Endorsements",
     "Why its important to transfer risk and cost to my clients",
     "OK so how does it work",
-    "Notice of Terrorism Coverage Offering",
+    "Notice of Terrorism Coverage Offering", # Moved here
     "The Small Print",
     "Overall Program Binding"
 ]
@@ -25,33 +25,35 @@ MASTER_ORDER = [
 def classify_page(text):
     t = " ".join(text.lower().split())
     
-    # Surplus Lines (State Agnostic) [cite: 1, 260]
+    # Surplus Lines (State Agnostic)
     if "surplus lines" in t and ("disclosure" in t or "notice" in t): 
         return "Surplus Lines Disclosure"
     
-    # Commercial General Liability Quote [cite: 15, 30]
-    # We now look for 'general liability' and 'aggregate limit' to ensure we catch page 2
+    # Notice of Terrorism (Check this BEFORE the CGL Quote)
+    if "notice of terrorism" in t and "coverage offering" in t: 
+        return "Notice of Terrorism Coverage Offering"
+    
+    # Commercial General Liability Quote
     if "commercial general liability" in t and ("limit" in t or "aggregate" in t) and "forms" not in t: 
         return "Commercial General Liability Quote"
     
-    # Annual Business Auto Quote [cite: 36, 46]
+    # Annual Business Auto Quote
     if "annual business auto" in t and ("quote" in t or "loss control" in t) and "forms" not in t: 
         return "Annual Business Auto Quote"
     
-    # Blanket Accident [cite: 55, 223]
+    # Blanket Accident
     if "blanket accident" in t and "details" in t: 
         return "Blanket Accident Quote"
     
-    # Forms & Endorsements [cite: 79, 89]
+    # Forms & Endorsements
     if "commercial general liability" in t and "forms" in t and "endorsements" in t: 
         return "Commercial General Liability Forms & Endorsements"
     if "business auto" in t and "forms" in t and "endorsements" in t: 
         return "Annual Business Auto Forms & Endorsements"
     
-    # Marketing / Legal [cite: 97, 134, 151, 183, 211]
+    # Marketing / Legal
     if "important to transfer risk" in t: return "Why its important to transfer risk and cost to my clients"
     if "how does it work" in t: return "OK so how does it work"
-    if "terrorism" in t and "offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
     if "program binding" in t: return "Overall Program Binding"
     
