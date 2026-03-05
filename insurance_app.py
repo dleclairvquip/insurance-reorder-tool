@@ -44,12 +44,12 @@ def get_proximity_val(text, label):
     except: return "---"
 
 def extract_full_address(text):
-    """Captures Name Insured and multi-line Address including City, State, Zip."""
+    """Captures Name Insured and multi-line Address including City, State, Zip[cite: 202]."""
     lines = text.split('\n')
     address_parts = []
     for i, line in enumerate(lines):
         if "address" in line.lower():
-            # Grab the current line after 'Address' and the following 1-2 lines for City/State/Zip
+            # Grab the current line after 'Address' and the following 1-2 lines for City/State/Zip 
             address_parts.append(line.split('Address')[-1].strip().replace(":", ""))
             if i + 1 < len(lines): address_parts.append(lines[i+1].strip())
             if i + 2 < len(lines) and any(char.isdigit() for char in lines[i+2]): 
@@ -98,4 +98,98 @@ def generate_exec_summary(data):
     # Header Identity
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
-    elements.append(Paragraph("
+    elements.append(Paragraph("Address", label_s))
+    elements.append(Paragraph(data['Address'], val_s))
+    elements.append(Paragraph("Period of Insurance", label_s))
+    elements.append(Paragraph(data['Dates'], val_s))
+    elements.append(Spacer(1, 5))
+
+    # CGL Limits
+    gl_limits = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): gl_limits.append([k, v])
+    t_gl = Table(gl_limits, colWidths=[380, 120]); t_gl.setStyle(table_s)
+    elements.append(t_gl); elements.append(Spacer(1, 10))
+
+    # CGL Premium Breakdown 
+    gl_prem = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): gl_prem.append([k, v])
+    t_gl_p = Table(gl_prem, colWidths=[380, 120]); t_gl_p.setStyle(table_s)
+    elements.append(t_gl_p); elements.append(Spacer(1, 10))
+
+    # Auto Limits
+    auto_limits = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): auto_limits.append([k, v])
+    t_auto = Table(auto_limits, colWidths=[380, 120]); t_auto.setStyle(table_s)
+    elements.append(t_auto); elements.append(Spacer(1, 10))
+
+    # Auto Premium Breakdown 
+    auto_prem = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): auto_prem.append([k, v])
+    t_auto_p = Table(auto_prem, colWidths=[380, 120]); t_auto_p.setStyle(table_s)
+    elements.append(t_auto_p)
+
+    doc.build(elements); buffer.seek(0)
+    return buffer
+
+# --- MAIN APP ---
+st.title("🛡️ Adventure Shield | Executive Assembler")
+files = st.file_uploader("Upload all Quote PDFs", type="pdf", accept_multiple_files=True)
+
+if files:
+    buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
+    full_text = ""
+    for f in files:
+        reader = pypdf.PdfReader(f)
+        for page in reader.pages:
+            t = page.extract_text() or ""; full_text += "\n" + t
+            buckets[classify_page(t)].append(page)
+
+    # Scrape data for summary
+    s_data = {
+        "Insured": "Midnight Sun ATV/Snowmobile Tours" if "Midnight Sun" in full_text else "Unknown Insured",
+        "Address": extract_full_address(full_text),
+        "Dates": get_proximity_val(full_text, "Period of Insurance"),
+        "GL_Limits": {
+            "General Aggregate Limit": get_proximity_val(full_text, "General Aggregate Limit"),
+            "Each Occurrence Limit": get_proximity_val(full_text, "Each Occurrence Limit"),
+            "Products - Completed Operations": get_proximity_val(full_text, "Products - Completed Operations"),
+            "Personal and Advertising Injury": get_proximity_val(full_text, "Personal and Advertising Injury"),
+            "Damage to Premises Rented to You": get_proximity_val(full_text, "Damage to Premises Rented"),
+            "Medical Expense Limit": get_proximity_val(full_text, "Medical Expense Limit")
+        },
+        "Auto_Limits": {
+            "Bodily Injury per Person": get_proximity_val(full_text, "Bodily Injury Liability per Person"),
+            "Bodily Injury per Accident": get_proximity_val(full_text, "Bodily Injury Liability per Accident"),
+            "Property Damage per Accident": get_proximity_val(full_text, "Property Damage Liability"),
+            "Collision": get_proximity_val(full_text, "Collision"),
+            "Comprehensive": get_proximity_val(full_text, "Comprehensive")
+        },
+        "GL_Costs": {
+            "Premium": get_proximity_val(full_text, "Premium"),
+            "Surplus Lines Tax": get_proximity_val(full_text, "Surplus Lines Tax:"),
+            "Stamping Fee": get_proximity_val(full_text, "Stamping Fee"),
+            "vQuip Platform Fee": get_proximity_val(full_text, "vQuip Platform Fee"),
+            "Total Premium & Taxes / Fees": get_proximity_val(full_text, "Total Premium & Taxes")
+        },
+        "Auto_Costs": {
+            "Annual Premium": get_proximity_val(full_text, "Annual Premium"),
+            "Surplus Lines Tax": get_proximity_val(full_text, "Surplus Lines Tax"),
+            "Stamping Fee": get_proximity_val(full_text, "Stamping Fee"),
+            "Technology Transaction Fee": get_proximity_val(full_text, "Technology Transaction Fee"),
+            "Total": get_proximity_val(full_text, "Total")
+        }
+    }
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🚀 ASSEMBLE 11-PAGE MASTER QUOTE"):
+            writer = pypdf.PdfWriter()
+            for cat in MASTER_ORDER:
+                for p in buckets[cat]: writer.add_page(p)
+            for p in buckets["Unclassified/Misc"]: writer.add_page(p)
+            st.download_button("💾 DOWNLOAD PACKAGE", writer.write(io.BytesIO()), "Package.pdf")
+            
+    with col2:
+        if st.button("📊 GENERATE SEPARATE SUMMARY"):
+            pdf_buf = generate_exec_summary(s_data)
+            st.download_button("💾 DOWNLOAD SUMMARY", pdf_buf, "Summary.pdf")
