@@ -23,20 +23,46 @@ MASTER_ORDER = [
 ]
 
 def classify_page(text):
-    """Matches page text against your specific insurance headers."""
-    t = text.replace('\n', ' ').strip()
+    """Matches page text with improved flexibility."""
+    # Convert all text to lowercase and remove extra spaces to prevent matching errors
+    t = " ".join(text.lower().split())
     
-    if "Surplus Lines Disclosure" in t: return "Surplus Lines Disclosure"
-    if "Commercial General Liability" in t and "Quote" in t: return "Commercial General Liability Quote"
-    if "Annual Business Auto" in t and "Quote" in t: return "Annual Business Auto Quote"
-    if "Blanket Accident" in t: return "Blanket Accident Quote"
-    if "Commercial General Liability Forms & Endorsements" in t: return "Commercial General Liability Forms & Endorsements"
-    if "Annual Business Auto Forms & Endorsements" in t: return "Annual Business Auto Forms & Endorsements"
-    if "important to transfer risk and cost" in t: return "Why its important to transfer risk and cost to my clients"
-    if "OK so how does it work" in t: return "OK so how does it work"
-    if "Notice of Terrorism Coverage Offering" in t: return "Notice of Terrorism Coverage Offering"
-    if "The Small Print" in t: return "The Small Print"
-    if "Overall Program Binding" in t: return "Overall Program Binding"
+    if "surplus lines disclosure" in t: 
+        return "Surplus Lines Disclosure"
+    
+    # Using 'general liability' + 'quote' to be safer
+    if "general liability" in t and "quote" in t: 
+        return "Commercial General Liability Quote"
+    
+    if "business auto" in t and "quote" in t: 
+        return "Annual Business Auto Quote"
+    
+    if "blanket accident" in t: 
+        return "Blanket Accident Quote"
+    
+    # Check for the Forms list - looking for 'forms' and 'endorsements'
+    if "general liability" in t and "forms" in t and "endorsements" in t: 
+        return "Commercial General Liability Forms & Endorsements"
+        
+    if "business auto" in t and "forms" in t and "endorsements" in t: 
+        return "Annual Business Auto Forms & Endorsements"
+    
+    if "transfer risk and cost" in t: 
+        return "Why its important to transfer risk and cost to my clients"
+    
+    if "how does it work" in t: 
+        return "OK so how does it work"
+    
+    if "terrorism coverage offering" in t: 
+        return "Notice of Terrorism Coverage Offering"
+    
+    if "small print" in t: 
+        return "The Small Print"
+    
+    if "program binding" in t: 
+        return "Overall Program Binding"
+    
+    return "Unclassified/Misc"
     
     return "Unclassified/Misc"
 
