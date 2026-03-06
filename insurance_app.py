@@ -33,25 +33,26 @@ MASTER_ORDER = [
 
 # 3. EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Normalizes text and finds values. Tight window for currency to prevent date-bleed."""
+    """Finds values with adaptive windows to catch 'Excluded' or dollar amounts."""
     clean_text = " ".join(text.split())
     clean_label = " ".join(label.split())
     idx = clean_text.lower().find(clean_label.lower())
     if idx == -1: return "---"
     
-    window_size = 150 if is_date else 60 
+    # Dates need a larger window; Limits need enough space for $ or 'Excluded'
+    window_size = 200 if is_date else 120 
     window = clean_text[idx : idx + window_size]
     
     if is_date:
         match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
     else:
-        # Specifically looks for currency or 'Excluded'
+        # Prioritize dollar amounts, then 'Excluded' or 'N/A'
         match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
         
     return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
+    """Extracts identity fields and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -60,13 +61,12 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata seen in Screenshot 2026-03-05 112448.png
+    # Cleans metadata to prevent address bleed
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # FIXED: Removed the invalid citation from the logic
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -101,7 +101,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information (image_30dcef.png format)
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -110,31 +110,30 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits (image_3136e3.png format)
+    # CGL Limits Table
     gl_t = [["Commercial General Liability Coverage", "Limit"]]
     for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Limits (image_313421.png format)
+    # Business Auto Limits Table
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # CGL Financial Summary (image_30dd4c.png format)
-    gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
-    t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
+    # Premium Summary Tables
+    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
+    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
     elements.append(t3)
     gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
-    # Auto Financial Summary (image_30dd84.png format)
-    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
-    t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
+    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
+    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
     elements.append(t4)
     au_tot = [["Total", data['Auto_Total']]]
     t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
@@ -151,7 +150,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Analyzing Carrier Documents..."):
+    with st.spinner("Processing Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
