@@ -30,37 +30,43 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. HORIZONTAL LOCK EXTRACTION ENGINE
+# 3. STABILIZED ADAPTIVE EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Surgical row scan. Identifies the label and searches only its own row 
-    for the first valid dollar amount or status word.
+    Two-pass search: 
+    Pass 1: Checks the specific row for exact horizontal matches.
+    Pass 2: Flattens text and uses lookahead to grab values while ignoring dates.
     """
+    # Pass 1: Row-level scan to prevent vertical bleed
     lines = text.split('\n')
     for i, line in enumerate(lines):
-        # Normalize the label to handle split-word formatting like 'Surplus  Lines  Tax'
-        clean_line = " ".join(line.lower().split())
-        clean_label = " ".join(label.lower().split())
-        
-        if clean_label in clean_line:
-            # Multi-line check (for values that wrap to the next line in the PDF grid)
+        if label.lower() in line.lower():
             search_area = line
-            if i + 1 < len(lines):
-                search_area += " " + lines[i+1]
+            if i + 1 < len(lines): search_area += " " + lines[i+1] # Look one line ahead for wrapped values
             
             if is_date:
-                # MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # Finds $ currency or 'Excluded'. Negative lookahead prevents date-bleed.
+                # Prioritize currency/Excluded. Negative lookahead (?!.*to) blocks date ranges.
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
             
             if match: return match.group(0)
-            
+
+    # Pass 2: Windowed fallback for messy PDF grids
+    flat_text = " ".join(text.split())
+    idx = flat_text.lower().find(label.lower())
+    if idx != -1:
+        window = flat_text[idx : idx + 400]
+        if is_date:
+            match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+        else:
+            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
+        if match: return match.group(0)
+        
     return "---"
 
 def extract_clean_identity(text, label):
-    """Extracts identity fields and stops exactly at the next section header."""
+    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -68,13 +74,13 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop to prevent 'Period of Insurance' from bleeding into address
+    # Hard stop to prevent 'Period of Insurance' bleed into address
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN CLASSIFICATION: Stray citation tags removed to prevent NameError
+    # CLEAN LOGIC: Stray symbols and citations removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -109,7 +115,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Header Section
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -118,23 +124,21 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Limits and Costs
+    # CGL & Auto Sections
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
         ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
     ]
-    
     for title, d_map, header in sections:
-        t_data = [[title, header]]
-        for k, v in d_map.items(): t_data.append([k, v])
-        t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
+        t_d = [[title, header]]
+        for k, v in d_map.items(): t_d.append([k, v])
+        t = Table(t_d, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
     # Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-    
     au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
     t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
@@ -146,23 +150,20 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
-    
-    with st.spinner("Analyzing Carrier Documents..."):
-        for f in files:
-            reader = pypdf.PdfReader(f)
-            for page in reader.pages:
-                t = page.extract_text() or ""
-                cat = classify_page(t)
-                text_by_type[cat] += "\n" + t
-                buckets[cat].append(page)
+    for f in files:
+        reader = pypdf.PdfReader(f)
+        for page in reader.pages:
+            t = page.extract_text() or ""
+            cat = classify_page(t)
+            text_by_type[cat] += "\n" + t
+            buckets[cat].append(page)
 
-    gl_text = text_by_type["Commercial General Liability Quote"]
-    auto_text = text_by_type["Annual Business Auto Quote"]
+    gl_text, auto_text = text_by_type["Commercial General Liability Quote"], text_by_type["Annual Business Auto Quote"]
     full_text = "\n".join(text_by_type.values())
 
     s_data = {
@@ -207,8 +208,7 @@ if files:
             for cat in MASTER_ORDER:
                 for p in buckets[cat]: writer.add_page(p)
             for p in buckets["Unclassified/Misc"]: writer.add_page(p)
-            out_buf = io.BytesIO()
-            writer.write(out_buf)
+            out_buf = io.BytesIO(); writer.write(out_buf)
             st.download_button("💾 DOWNLOAD PACKAGE", out_buf.getvalue(), "Package.pdf")
             
     with col2:
