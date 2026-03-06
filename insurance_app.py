@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,49 +30,51 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. CONTEXT-AWARE EXTRACTION ENGINE
+# 3. HORIZONTAL LOCK EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Stabilized extraction that flattens coordinates and uses a multi-pass regex.
-    Ensures currency is prioritized and dates are excluded from limit fields.
+    Surgical row scan. Identifies the label and searches only its own row 
+    for the first valid dollar amount or status word.
     """
-    # Flatten text to handle split labels and distant columns
-    flat_text = " ".join(text.split())
-    search_label = " ".join(label.lower().split())
-    
-    idx = flat_text.lower().find(search_label)
-    if idx == -1: return "---"
-    
-    # Scanning a 400-character window to jump across table columns
-    window = flat_text[idx : idx + 400]
-    
-    if is_date:
-        # Match 'MM/DD/YYYY to MM/DD/YYYY' range
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-    else:
-        # REGEX: Prioritizes currency or 'Excluded'. 
-        # Negative lookahead (?!.*to) ensures header dates are ignored.
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        # Normalize the label to handle split-word formatting like 'Surplus  Lines  Tax'
+        clean_line = " ".join(line.lower().split())
+        clean_label = " ".join(label.lower().split())
         
-    return match.group(0) if match else "---"
+        if clean_label in clean_line:
+            # Multi-line check (for values that wrap to the next line in the PDF grid)
+            search_area = line
+            if i + 1 < len(lines):
+                search_area += " " + lines[i+1]
+            
+            if is_date:
+                # MM/DD/YYYY to MM/DD/YYYY
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
+            else:
+                # Finds $ currency or 'Excluded'. Negative lookahead prevents date-bleed.
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
+            
+            if match: return match.group(0)
+            
+    return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical extraction of Name/Address that hard-stops at metadata."""
+    """Extracts identity fields and stops exactly at the next section header."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
-            # Capture multi-line addresses common in these headers
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stops to prevent 'Period of Insurance' bleed into address
+    # Hard stop to prevent 'Period of Insurance' from bleeding into address
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # STABLE LOGIC: Citations and stray characters removed to prevent NameError
+    # CLEAN CLASSIFICATION: Stray citation tags removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -129,7 +131,7 @@ def generate_exec_summary(data):
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
-    # Financial Totals
+    # Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
     
@@ -150,7 +152,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Building Proposal..."):
+    with st.spinner("Analyzing Carrier Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
