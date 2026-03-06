@@ -10,12 +10,12 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
 
-# 2. MASTER SEQUENCE (Restored for the Quote Package)
+# 2. MASTER SEQUENCE
 MASTER_ORDER = [
     "Surplus Lines Disclosure",
     "Commercial General Liability Quote",
@@ -30,28 +30,40 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. STABILIZED EXTRACTION ENGINE
+# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Finds the label and scans the horizontal plane.
-    Uses negative lookahead (?!.*to) to block Period of Insurance dates.
+    Surgical row scan. Identifies the label and searches ONLY its own row 
+    for the first valid dollar amount or status word.
     """
-    flat_text = " ".join(text.split())
-    search_label = " ".join(label.lower().split())
-    
-    idx = flat_text.lower().find(search_label)
-    if idx == -1: return "---"
-    
-    # Widened 450-character window to jump across table gutters
-    window = flat_text[idx : idx + 450]
-    
-    if is_date:
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-    else:
-        # Prioritizes currency/Excluded. Negative lookahead blocks date ranges
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', window)
+    lines = text.split('\n')
+    for i, line in enumerate(lines):
+        # Normalize the label to handle split-word formatting in PDF text layers
+        clean_line = " ".join(line.lower().split())
+        clean_label = " ".join(label.lower().split())
         
-    return match.group(0) if match else "---"
+        if clean_label in clean_line:
+            # Anchor to this specific horizontal line
+            search_area = line
+            
+            if is_date:
+                # MM/DD/YYYY to MM/DD/YYYY
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
+            else:
+                # REGEX: Finds $ currency or 'Excluded'. 
+                # (?!.*to) is the 'Magic Bullet' - it forbids picking up the 'to' in header dates.
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', search_area)
+            
+            if match:
+                return match.group(0)
+            
+            # Contextual Fallback: Check one line down for misaligned PDF grids
+            if i + 1 < len(lines):
+                next_line = lines[i+1]
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', next_line)
+                if match: return match.group(0)
+            
+    return "---"
 
 def extract_clean_identity(text, label):
     """Surgical identity extraction that stops exactly at metadata."""
@@ -62,6 +74,7 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
+    # Hard stop to prevent 'Period of Insurance' bleed into identity
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -73,8 +86,6 @@ def classify_page(text):
     if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
     if "forms" in t and "endorsements" in t:
         return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
-    if "transfer risk" in t: return "Why its important to transfer risk and cost"
-    if "how does it work" in t: return "OK so how does it work"
     if "overall program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
@@ -108,7 +119,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL, Auto, and Costs Tables
+    # CGL & Auto Sections
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -123,9 +134,9 @@ def generate_exec_summary(data):
     # Financial Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-    au_costs = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_costs.append([k, v])
-    t_au = Table(au_costs, colWidths=[380, 120]); t_au.setStyle(table_s)
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
     elements.append(t_au)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
@@ -184,7 +195,6 @@ if files:
     with col1:
         if st.button("🚀 GENERATE QUOTE PACKAGE"):
             writer = pypdf.PdfWriter()
-            # Restore the master sequence combining all pages
             for cat in MASTER_ORDER:
                 for p in buckets[cat]: writer.add_page(p)
             for p in buckets["Unclassified/Misc"]: writer.add_page(p)
