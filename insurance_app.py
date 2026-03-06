@@ -37,14 +37,24 @@ def get_clean_val(text, label, is_date=False):
     lines = text.split('\n')
     for line in lines:
         if label.lower() in line.lower():
-            # Targets currency, 'Excluded', 'N/A', or date ranges
+            # Targets date ranges specifically
             if is_date:
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
+                if match: return match.group(0)
             else:
-                # Prioritize $ amounts, then text statuses
+                # Prioritize dollar amounts, then text statuses like 'Excluded'
+                # Uses a regex that avoids catching dates in the limit lines
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
-            
-            if match: return match.group(0)
+                if match: return match.group(0)
+                
+    # Fallback: Search the original way if row-scan fails
+    clean_text = " ".join(text.split())
+    idx = clean_text.lower().find(label.lower())
+    if idx != -1:
+        window = clean_text[idx : idx + 150]
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
+        if match: return match.group(0)
+        
     return "---"
 
 def extract_clean_identity(text, label):
@@ -62,6 +72,7 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
+    # CLEANED: Citations removed from logic to prevent syntax errors
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -96,7 +107,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Identity Block
+    # Header Section
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -105,19 +116,19 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits
+    # CGL Limits Table
     gl_t = [["Commercial General Liability Coverage", "Limit"]]
     for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Limits
+    # Business Auto Limits Table
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # Financial Summary
+    # Financial: CGL Premium Summary
     fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
     for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
     t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
@@ -126,6 +137,7 @@ def generate_exec_summary(data):
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
+    # Financial: Auto Premium Summary
     fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
     t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
@@ -154,9 +166,9 @@ if files:
                 text_by_type[cat] += "\n" + t
                 buckets[cat].append(page)
 
-    full_text = "\n".join(text_by_type.values())
     gl_text = text_by_type["Commercial General Liability Quote"]
     auto_text = text_by_type["Annual Business Auto Quote"]
+    full_text = "\n".join(text_by_type.values())
 
     s_data = {
         "Insured": extract_clean_identity(full_text, "Name Insured"), 
