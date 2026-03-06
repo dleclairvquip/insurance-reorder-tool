@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,9 +30,9 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ROW-ISOLATION EXTRACTION ENGINE
+# 3. ANCHOR-BASED EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Surgical horizontal scan. Finds label and scans ONLY its own row for data."""
+    """Surgical row scan. Finds label and captures ONLY its own row for data."""
     lines = text.split('\n')
     for line in lines:
         if label.lower() in line.lower():
@@ -41,6 +41,7 @@ def get_clean_val(text, label, is_date=False):
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
             else:
                 # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
+                # This stops the Period of Insurance from bleeding into Comprehensive
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', line)
             
             if match: return match.group(0)
@@ -54,7 +55,7 @@ def get_clean_val(text, label, is_date=False):
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that stops before metadata."""
+    """Surgical identity extraction to stop address bleed."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -68,13 +69,13 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: All stray symbols and citations removed
+    # CLEAN LOGIC: Removed stray citation to prevent NameError
+    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
     if "commercial general liability" in t and "limit" in t and "forms" not in t: return "Commercial General Liability Quote"
     if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
-    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
     if "forms" in t and "endorsements" in t:
         return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
     if "transfer risk" in t: return "Why its important to transfer risk and cost"
@@ -103,7 +104,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Identity Information
+    # Header Identity
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
