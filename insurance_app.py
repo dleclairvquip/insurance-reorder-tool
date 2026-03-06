@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,38 +30,38 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
+# 3. ABSOLUTE COORDINATE ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Finds the label and scans the immediate horizontal row.
-    Regex uses negative lookahead to block Period of Insurance dates from coverage fields.
+    Finds the label and scans only its immediate horizontal row.
+    Regex uses negative lookahead (?!.*to) to prevent date-bleed from the header.
     """
     lines = text.split('\n')
     for i, line in enumerate(lines):
-        # Normalize the line to handle weird spacing
         clean_line = " ".join(line.lower().split())
         clean_label = " ".join(label.lower().split())
         
         if clean_label in clean_line:
-            # Create a small 2-line window for vertically 'split' table rows
+            # Anchor to this specific horizontal line
             search_area = line
+            # Fallback for wrapped values in misaligned PDF grids
             if i + 1 < len(lines):
                 search_area += " " + lines[i+1]
             
             if is_date:
-                # MM/DD/YYYY to MM/DD/YYYY
+                # Capture standard MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
                 # REGEX: Prioritizes currency or 'Excluded'.
-                # (?!.*to) is the 'Magic Bullet' - it forbids picking up any string containing 'to' (dates)
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
+                # (?!.*to) is the 'Magic Bullet' - it ignores strings with 'to' (dates).
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', search_area)
             
             if match: return match.group(0)
             
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that stops exactly at metadata markers."""
+    """Surgical extraction of Name/Address that hard-stops at metadata markers."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -75,17 +75,12 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: No citation markers in logic
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
-    if "small print" in t: return "The Small Print"
     if "commercial general liability" in t and "limit" in t and "forms" not in t: return "Commercial General Liability Quote"
     if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
-    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
     if "forms" in t and "endorsements" in t:
         return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
-    if "transfer risk" in t: return "Why its important to transfer risk and cost"
-    if "how does it work" in t: return "OK so how does it work"
     if "overall program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
@@ -119,7 +114,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL, Auto, and Costs Tables
+    # CGL & Auto Tables
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -148,8 +143,9 @@ st.title("🛡️ Adventure Shield Proposal Builder")
 files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
-    buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
+    buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
+    
     for f in files:
         reader = pypdf.PdfReader(f)
         for page in reader.pages:
@@ -191,7 +187,7 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Tech Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
