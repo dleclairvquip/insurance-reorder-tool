@@ -11,7 +11,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -33,26 +33,27 @@ MASTER_ORDER = [
 
 # 3. EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Finds values with adaptive windows to catch 'Excluded' or dollar amounts."""
+    """Normalizes text and finds values. Uses strict regex to separate dates from limits."""
     clean_text = " ".join(text.split())
     clean_label = " ".join(label.split())
     idx = clean_text.lower().find(clean_label.lower())
     if idx == -1: return "---"
     
-    # Dates need a larger window; Limits need enough space for $ or 'Excluded'
+    # Larger window for dates, tighter for currency to prevent row-jump
     window_size = 200 if is_date else 120 
     window = clean_text[idx : idx + window_size]
     
     if is_date:
+        # Specifically targets the MM/DD/YYYY to MM/DD/YYYY format
         match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
     else:
-        # Prioritize dollar amounts, then 'Excluded' or 'N/A'
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
+        # Specifically avoids date formats to ensure 'Excluded' or $ sit on the correct row
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
         
     return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts identity fields and aggressively strips trailing PDF metadata."""
+    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -61,12 +62,13 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata to prevent address bleed
+    # Cleans metadata seen in your address screenshots
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
+    # FIXED: Removed the stray citation that caused the NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -101,7 +103,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Header Section
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -122,18 +124,19 @@ def generate_exec_summary(data):
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # Premium Summary Tables
-    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
-    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
+    # General Liability Premium Breakdown
+    gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
+    t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
     elements.append(t3)
     gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
-    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
-    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
+    # Business Auto Premium Breakdown
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
     elements.append(t4)
     au_tot = [["Total", data['Auto_Total']]]
     t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
@@ -150,7 +153,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Processing Documents..."):
+    with st.spinner("Analyzing Carrier Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -178,7 +181,7 @@ if files:
         "Auto_Limits": {
             "BI per Person": get_clean_val(auto_text, "Bodily Injury Liability per Person"),
             "BI per Accident": get_clean_val(auto_text, "Bodily Injury Liability per Accident"),
-            "Property Damage per Accident": get_clean_val(auto_text, "Property Damage Liability"),
+            "Property Damage per Accident": get_proximity_val(auto_text, "Property Damage Liability"),
             "Collision": get_clean_val(auto_text, "Collision"),
             "Comprehensive": get_clean_val(auto_text, "Comprehensive")
         },
