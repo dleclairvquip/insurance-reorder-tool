@@ -30,47 +30,46 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. COORDINATE-AWARE EXTRACTION ENGINE
+# 3. UNIVERSAL EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Deep cluster search. Finds label and scans a large block for the closest valid result."""
-    # Collapse all whitespace to normalize the PDF grid
-    clean_text = " ".join(text.split())
+    """Universal search: Flattens the text to find the label and the absolute next valid match."""
+    # Flatten text to remove all line-break issues
+    flat_text = " ".join(text.split())
     search_label = " ".join(label.lower().split())
     
-    idx = clean_text.lower().find(search_label)
+    idx = flat_text.lower().find(search_label)
     if idx == -1: return "---"
     
-    # Large 400-character window to capture distant columns in the table grid
-    window = clean_text[idx : idx + 400]
+    # Large window to reach across columns in the PDF table grid
+    window = flat_text[idx : idx + 450]
     
     if is_date:
-        # MM/DD/YYYY to MM/DD/YYYY
+        # Match standard MM/DD/YYYY to MM/DD/YYYY format
         match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
     else:
-        # Regex prioritizes dollar amounts, then 'Excluded', then 'N/A'
-        # Ensures it doesn't grab a date from the header by checking for currency/status
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
+        # Prioritize currency, then status words
+        # Negative lookahead ensures we don't grab a date from the header by mistake
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
         
     return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that cuts off exactly before the next PDF section."""
+    """Extracts identity info and hard-stops before metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
-            # Look ahead to capture multi-line addresses
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Hard stop at metadata markers to prevent bleed
+    # Aggressive stop-words to prevent bleed
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:|Address', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # STABLE LOGIC: Citations and stray characters removed to prevent NameError
+    # FIXED: No citation markers in logic
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -84,7 +83,7 @@ def classify_page(text):
     if "overall program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
-# 4. PROPOSAL GENERATOR
+# 4. SUMMARY GENERATOR
 def generate_exec_summary(data):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=LETTER, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
@@ -105,7 +104,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Identity
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -114,19 +113,19 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Section
+    # CGL Table
     gl_t = [["Commercial General Liability Coverage", "Limit"]]
     for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Section
+    # Auto Table
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # Financial Summary
+    # Financial Breakdowns
     fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
     for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
     t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
@@ -151,7 +150,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Analyzing Carrier Documents..."):
+    with st.spinner("Building Proposal..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -172,7 +171,7 @@ if files:
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
             "Products-Completed Ops": get_clean_val(gl_text, "Products-Completed Ops"),
-            "Personal/Advertising": get_clean_val(gl_text, "Personal/Advertising"),
+            "Personal/Advertising": get_clean_val(gl_text, "Personal/Advertising Injury"),
             "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Rented Premises"),
             "Medical Expense": get_clean_val(gl_text, "Medical Expense")
         },
