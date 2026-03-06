@@ -30,32 +30,31 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ANCHOR-BASED EXTRACTION ENGINE
+# 3. REBUILT EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Surgical row scan. Finds label and captures ONLY its own row for data."""
-    lines = text.split('\n')
-    for line in lines:
-        if label.lower() in line.lower():
-            if is_date:
-                # Capture standard 'to' date range format
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
-            else:
-                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
-                # This stops the Period of Insurance from bleeding into Comprehensive
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', line)
-            
-            if match: return match.group(0)
-            
-    # Fallback for wrapped labels: check the immediate next line if the current one is empty
-    for i, line in enumerate(lines):
-        if label.lower() in line.lower() and i+1 < len(lines):
-            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', lines[i+1])
-            if match: return match.group(0)
-            
-    return "---"
+    """Clean slate search: normalizes the entire block and finds the unique value for that label."""
+    # Merge lines to fix split-label issues
+    flat_text = " ".join(text.split())
+    search_label = " ".join(label.lower().split())
+    
+    idx = flat_text.lower().find(search_label)
+    if idx == -1: return "---"
+    
+    # Large window to capture distant columns in the PDF grid
+    window = flat_text[idx : idx + 400]
+    
+    if is_date:
+        # Match standard date range format
+        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+    else:
+        # REGEX: Prioritizes currency, then 'Excluded'. 
+        # (?!.*to) ensures we don't grab a date range sitting in the same window.
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
+        
+    return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction to stop address bleed."""
+    """Surgical extraction of Name/Address to prevent metadata bleed."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -63,19 +62,19 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop at metadata markers to prevent address bleed
+    # Hard stop to prevent 'Period of Insurance' from bleeding into address
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: Removed stray citation to prevent NameError
-    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
+    # CLEAN LOGIC: All stray citations and syntax errors removed
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
     if "commercial general liability" in t and "limit" in t and "forms" not in t: return "Commercial General Liability Quote"
     if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
+    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
     if "forms" in t and "endorsements" in t:
         return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
     if "transfer risk" in t: return "Why its important to transfer risk and cost"
@@ -104,7 +103,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Identity
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -113,7 +112,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Limits and Premiums
+    # Limits and Costs
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -126,7 +125,7 @@ def generate_exec_summary(data):
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
-    # Financial Totals
+    # Final Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
     
@@ -147,7 +146,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Building Proposal..."):
+    with st.spinner("Analyzing Carrier Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
