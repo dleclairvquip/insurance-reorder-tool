@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,38 +30,43 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ABSOLUTE COORDINATE ENGINE
+# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Finds the label and scans only its immediate horizontal row.
-    Regex uses negative lookahead (?!.*to) to prevent date-bleed from the header.
+    Surgical row scan. Identifies the label and searches ONLY its own row 
+    for the first valid dollar amount or status word.
     """
     lines = text.split('\n')
     for i, line in enumerate(lines):
+        # Normalize labels to handle split-word PDF formatting
         clean_line = " ".join(line.lower().split())
         clean_label = " ".join(label.lower().split())
         
         if clean_label in clean_line:
-            # Anchor to this specific horizontal line
+            # Check the anchor line first
             search_area = line
-            # Fallback for wrapped values in misaligned PDF grids
-            if i + 1 < len(lines):
-                search_area += " " + lines[i+1]
             
             if is_date:
-                # Capture standard MM/DD/YYYY to MM/DD/YYYY
+                # Capture standard date range: MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # REGEX: Prioritizes currency or 'Excluded'.
-                # (?!.*to) is the 'Magic Bullet' - it ignores strings with 'to' (dates).
+                # REGEX: Finds $ amounts or 'Excluded'. 
+                # Negative lookahead (?!.*to) stops header dates from bleeding into limits
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', search_area)
             
-            if match: return match.group(0)
+            if match:
+                return match.group(0)
+            
+            # Contextual Fallback: Check one line down for misaligned PDF grids
+            if i + 1 < len(lines):
+                next_line = lines[i+1]
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', next_line)
+                if match: return match.group(0)
             
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical extraction of Name/Address that hard-stops at metadata markers."""
+    """Surgical identity extraction that stops exactly at metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -105,7 +110,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Identity Block
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -114,7 +119,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL & Auto Tables
+    # CGL & Auto Sections
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -126,7 +131,7 @@ def generate_exec_summary(data):
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
-    # Totals
+    # Financial Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
     au_costs = [["Business Auto Premium Summary", "Paid in Full"]]
