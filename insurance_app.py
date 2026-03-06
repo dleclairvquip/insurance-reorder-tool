@@ -32,32 +32,36 @@ MASTER_ORDER = [
 
 # 3. ROBUST EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Surgical row search. Captures 'Excluded' or $ without jumping to other lines."""
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    
+    """Adaptive search: checks row-level first, then expands to window."""
+    # Pass 1: Row-level search (Prevents vertical bleed)
+    lines = text.split('\n')
     for i, line in enumerate(lines):
-        # Normalize whitespace to handle multi-word labels like 'Surplus Lines Tax'
-        clean_line = " ".join(line.lower().split())
-        clean_label = " ".join(label.lower().split())
-        
-        if clean_label in clean_line:
-            # Check this line AND the next line for values (common in grid-style PDFs)
+        if label.lower() in line.lower():
             search_area = line
-            if i + 1 < len(lines):
-                search_area += " " + lines[i+1]
+            if i + 1 < len(lines): search_area += " " + lines[i+1] # Look one line ahead
             
             if is_date:
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
-                if match: return match.group(0)
             else:
-                # Look for dollar amounts or 'Excluded' / 'N/A'
-                # Tightened regex to avoid catching header dates
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', search_area)
-                if match: return match.group(0)
+            
+            if match: return match.group(0)
+
+    # Pass 2: Fuzzy window search (Backup for messy PDF grids)
+    clean_text = " ".join(text.split())
+    idx = clean_text.lower().find(label.lower())
+    if idx != -1:
+        window = clean_text[idx : idx + 250]
+        if is_date:
+            match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+        else:
+            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
+        if match: return match.group(0)
+        
     return "---"
 
 def extract_clean_identity(text, label):
-    """Extracts Name or Address while aggressively stripping trailing PDF metadata."""
+    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -66,13 +70,12 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata seen in your address screenshots
+    # Cleans metadata
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEANED: All invalid citation tags removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -107,7 +110,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Header Info
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -116,30 +119,27 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits
-    gl_t = [["Commercial General Liability Coverage", "Limit"]]
-    for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
-    t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
-    elements.append(t1); elements.append(Spacer(1, 15))
+    # Limits and Premiums
+    sections = [
+        ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
+        ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
+        ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
+    ]
+    
+    for title, d_map, header in sections:
+        t_data = [[title, header]]
+        for k, v in d_map.items(): t_data.append([k, v])
+        t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
+        elements.append(t); elements.append(Spacer(1, 15))
 
-    # Auto Limits
-    au_t = [["Business Auto Coverage", "Limit"]]
-    for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
-    t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
-    elements.append(t2); elements.append(Spacer(1, 15))
-
-    # Financial Summary
-    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
-    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
-    elements.append(t3)
+    # Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-
-    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
-    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
-    elements.append(t4)
+    
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
+    elements.append(t_au)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
     doc.build(elements); buffer.seek(0)
@@ -172,9 +172,9 @@ if files:
         "GL_Limits": {
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
-            "Products-Completed Ops": get_clean_val(gl_text, "Products - Completed Operations"),
-            "Personal/Advertising": get_clean_val(gl_text, "Personal and Advertising Injury"),
-            "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Premises Rented"),
+            "Products-Completed Ops": get_clean_val(gl_text, "Products-Completed Ops"),
+            "Personal/Advertising": get_clean_val(gl_text, "Personal/Advertising"),
+            "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Rented Premises"),
             "Medical Expense": get_clean_val(gl_text, "Medical Expense")
         },
         "Auto_Limits": {
