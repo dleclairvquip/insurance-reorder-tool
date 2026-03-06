@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,35 +30,28 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ROBUST EXTRACTION ENGINES
+# 3. ROBUST EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Adaptive search: checks row-level first, then expands to window."""
-    # Pass 1: Row-level search (Prevents vertical bleed)
-    lines = text.split('\n')
-    for i, line in enumerate(lines):
-        if label.lower() in line.lower():
-            search_area = line
-            if i + 1 < len(lines): search_area += " " + lines[i+1] # Look one line ahead
-            
-            if is_date:
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
-            else:
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', search_area)
-            
-            if match: return match.group(0)
-
-    # Pass 2: Fuzzy window search (Backup for messy PDF grids)
+    """Adaptive block search that handles line breaks and column shifts."""
+    # Collapse extra whitespace to handle split labels like 'Surplus  Lines  Tax'
     clean_text = " ".join(text.split())
-    idx = clean_text.lower().find(label.lower())
-    if idx != -1:
-        window = clean_text[idx : idx + 250]
-        if is_date:
-            match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-        else:
-            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
-        if match: return match.group(0)
+    search_label = " ".join(label.lower().split())
+    
+    idx = clean_text.lower().find(search_label)
+    if idx == -1: return "---"
+    
+    # Large window (350 chars) to look ahead for values in distant table columns
+    window = clean_text[idx : idx + 350]
+    
+    if is_date:
+        # Specifically targets MM/DD/YYYY to MM/DD/YYYY range
+        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+    else:
+        # Targets currency, 'Excluded', or 'N/A'
+        # Prioritize the first valid currency/status found after the label
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
         
-    return "---"
+    return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
     """Extracts Name or Address and aggressively strips trailing PDF metadata."""
@@ -67,10 +60,11 @@ def extract_clean_identity(text, label):
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
+            # Look ahead for wrapped text common in addresses
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata
+    # Cleans trailing metadata
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -110,7 +104,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Info
+    # Identity Block
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -119,27 +113,31 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Limits and Premiums
-    sections = [
-        ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
-        ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
-        ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
-    ]
-    
-    for title, d_map, header in sections:
-        t_data = [[title, header]]
-        for k, v in d_map.items(): t_data.append([k, v])
-        t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
-        elements.append(t); elements.append(Spacer(1, 15))
+    # CGL Section
+    t1_data = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): t1_data.append([k, v])
+    t1 = Table(t1_data, colWidths=[380, 120]); t1.setStyle(table_s)
+    elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Totals
+    # Auto Section
+    t2_data = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): t2_data.append([k, v])
+    t2 = Table(t2_data, colWidths=[380, 120]); t2.setStyle(table_s)
+    elements.append(t2); elements.append(Spacer(1, 15))
+
+    # GL Premium
+    gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
+    t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
+    elements.append(t3)
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-    
+
+    # Auto Premium
     au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
-    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
-    elements.append(t_au)
+    t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
+    elements.append(t4)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
     doc.build(elements); buffer.seek(0)
@@ -173,7 +171,7 @@ if files:
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
             "Products-Completed Ops": get_clean_val(gl_text, "Products-Completed Ops"),
-            "Personal/Advertising": get_clean_val(gl_text, "Personal/Advertising"),
+            "Personal/Advertising": get_clean_val(gl_text, "Personal/Advertising Injury"),
             "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Rented Premises"),
             "Medical Expense": get_clean_val(gl_text, "Medical Expense")
         },
@@ -195,7 +193,7 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Tech Transaction Fee")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
