@@ -30,43 +30,36 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. STABILIZED ADAPTIVE EXTRACTION ENGINE
+# 3. VERTICAL GUTTER-SCAN EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Two-pass search: 
-    Pass 1: Checks the specific row for exact horizontal matches.
-    Pass 2: Flattens text and uses lookahead to grab values while ignoring dates.
+    Stabilized extraction:
+    1. Flattens text to normalize the table grid.
+    2. Searches for labels and anchors to the nearest currency/status.
+    3. Blocks date-bleed using negative lookahead.
     """
-    # Pass 1: Row-level scan to prevent vertical bleed
-    lines = text.split('\n')
-    for i, line in enumerate(lines):
-        if label.lower() in line.lower():
-            search_area = line
-            if i + 1 < len(lines): search_area += " " + lines[i+1] # Look one line ahead for wrapped values
-            
-            if is_date:
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
-            else:
-                # Prioritize currency/Excluded. Negative lookahead (?!.*to) blocks date ranges.
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
-            
-            if match: return match.group(0)
-
-    # Pass 2: Windowed fallback for messy PDF grids
+    # Merge lines to fix split-label issues
     flat_text = " ".join(text.split())
-    idx = flat_text.lower().find(label.lower())
-    if idx != -1:
-        window = flat_text[idx : idx + 400]
-        if is_date:
-            match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-        else:
-            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
-        if match: return match.group(0)
+    search_label = " ".join(label.lower().split())
+    
+    idx = flat_text.lower().find(search_label)
+    if idx == -1: return "---"
+    
+    # Large 450-character window to reach across the table 'gutters'
+    window = flat_text[idx : idx + 450]
+    
+    if is_date:
+        # Specifically looks for the MM/DD/YYYY to MM/DD/YYYY pattern
+        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+    else:
+        # REGEX: Prioritizes currency or 'Excluded'. 
+        # (?!.*to) ensures it skips the 'Period of Insurance' date range
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
         
-    return "---"
+    return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
+    """Surgical extraction of Name/Address that hard-stops at metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -80,7 +73,6 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: Stray symbols and citations removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -100,70 +92,78 @@ def generate_exec_summary(data):
     doc = SimpleDocTemplate(buffer, pagesize=LETTER, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
     
-    label_s = ParagraphStyle('Label', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=2)
-    val_s = ParagraphStyle('Value', parent=styles['Normal'], fontSize=11, fontName='Helvetica', spaceAfter=12)
-    table_s = TableStyle([
+    label_style = ParagraphStyle('Label', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=2)
+    value_style = ParagraphStyle('Value', parent=styles['Normal'], fontSize=11, fontName='Helvetica', spaceAfter=12)
+    table_style = TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), NAVY), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, 0), 9),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'), ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, LIGHT_GRAY])
     ])
-    total_bar_s = TableStyle([
+    total_style = TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), TEAL), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ])
 
     elements = []
-    # Header Section
-    elements.append(Paragraph("Name Insured", label_s))
-    elements.append(Paragraph(data['Insured'], val_s))
-    elements.append(Paragraph("Address", label_s))
-    elements.append(Paragraph(data['Address'], val_s))
-    elements.append(Paragraph("Period of Insurance", label_s))
-    elements.append(Paragraph(data['Dates'], val_s))
+    # Identity Block
+    elements.append(Paragraph("Name Insured", label_style))
+    elements.append(Paragraph(data['Insured'], value_style))
+    elements.append(Paragraph("Address", label_style))
+    elements.append(Paragraph(data['Address'], value_style))
+    elements.append(Paragraph("Period of Insurance", label_style))
+    elements.append(Paragraph(data['Dates'], value_style))
     elements.append(Spacer(1, 10))
 
-    # CGL & Auto Sections
-    sections = [
-        ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
-        ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
-        ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
-    ]
-    for title, d_map, header in sections:
-        t_d = [[title, header]]
-        for k, v in d_map.items(): t_d.append([k, v])
-        t = Table(t_d, colWidths=[380, 120]); t.setStyle(table_s)
-        elements.append(t); elements.append(Spacer(1, 15))
+    # CGL Section
+    gl_data = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): gl_data.append([k, v])
+    t1 = Table(gl_data, colWidths=[380, 120]); t1.setStyle(table_style)
+    elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Totals
-    elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
+    # Auto Section
+    au_data = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): au_data.append([k, v])
+    t2 = Table(au_data, colWidths=[380, 120]); t2.setStyle(table_style)
+    elements.append(t2); elements.append(Spacer(1, 15))
+
+    # Financial Summary
+    gl_costs = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): gl_costs.append([k, v])
+    t3 = Table(gl_costs, colWidths=[380, 120]); t3.setStyle(table_style)
+    elements.append(t3)
+    elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_style))
     elements.append(Spacer(1, 15))
-    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
-    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
-    elements.append(t_au)
-    elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
+
+    au_costs = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_costs.append([k, v])
+    t4 = Table(au_costs, colWidths=[380, 120]); t4.setStyle(table_style)
+    elements.append(t4)
+    elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_style))
 
     doc.build(elements); buffer.seek(0)
     return buffer
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
-    for f in files:
-        reader = pypdf.PdfReader(f)
-        for page in reader.pages:
-            t = page.extract_text() or ""
-            cat = classify_page(t)
-            text_by_type[cat] += "\n" + t
-            buckets[cat].append(page)
+    
+    with st.spinner("Building Proposal..."):
+        for f in files:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                t = page.extract_text() or ""
+                cat = classify_page(t)
+                text_by_type[cat] += "\n" + t
+                buckets[cat].append(page)
 
-    gl_text, auto_text = text_by_type["Commercial General Liability Quote"], text_by_type["Annual Business Auto Quote"]
+    gl_text = text_by_type["Commercial General Liability Quote"]
+    auto_text = text_by_type["Annual Business Auto Quote"]
     full_text = "\n".join(text_by_type.values())
 
     s_data = {
