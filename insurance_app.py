@@ -30,43 +30,38 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
+# 3. ABSOLUTE COORDINATE ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Surgical row scan. Identifies the label and searches ONLY its own row 
-    for the first valid dollar amount or status word.
+    Surgical line scan. Identifies the label and searches ONLY its horizontal row.
+    Uses negative lookahead (?!.*to) to block Period of Insurance dates.
     """
     lines = text.split('\n')
     for i, line in enumerate(lines):
-        # Normalize labels to handle split-word PDF formatting
         clean_line = " ".join(line.lower().split())
         clean_label = " ".join(label.lower().split())
         
         if clean_label in clean_line:
-            # Check the anchor line first
+            # Anchor to this specific horizontal line
             search_area = line
             
+            # Contextual Fallback: If no value on anchor line, check one line down 
+            # for misaligned PDF grids
             if is_date:
-                # Capture standard date range: MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # REGEX: Finds $ amounts or 'Excluded'. 
-                # Negative lookahead (?!.*to) stops header dates from bleeding into limits
+                # REGEX: Prioritizes currency or 'Excluded'.
+                # (?!.*to) ignores strings with 'to' (header dates).
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', search_area)
+                if not match and i + 1 < len(lines):
+                    match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', lines[i+1])
             
-            if match:
-                return match.group(0)
-            
-            # Contextual Fallback: Check one line down for misaligned PDF grids
-            if i + 1 < len(lines):
-                next_line = lines[i+1]
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|---', next_line)
-                if match: return match.group(0)
+            if match: return match.group(0)
             
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that stops exactly at metadata."""
+    """Surgical extraction of Name/Address that stops at metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -110,7 +105,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Identity Block
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -119,7 +114,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL & Auto Sections
+    # CGL & Auto Tables
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -134,9 +129,9 @@ def generate_exec_summary(data):
     # Financial Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-    au_costs = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_costs.append([k, v])
-    t_au = Table(au_costs, colWidths=[380, 120]); t_au.setStyle(table_s)
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
     elements.append(t_au)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
@@ -145,7 +140,7 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
