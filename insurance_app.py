@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,45 +30,45 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ROBUST CLUSTER EXTRACTION ENGINE
+# 3. ROW-ISOLATION EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Cluster search: normalizes text and finds the first valid data point following a label."""
-    # Flatten text to handle split labels and distant columns
-    flat_text = " ".join(text.split())
-    search_label = " ".join(label.lower().split())
-    
-    idx = flat_text.lower().find(search_label)
-    if idx == -1: return "---"
-    
-    # Scanning a 400-character window to jump across table columns
-    window = flat_text[idx : idx + 400]
-    
-    if is_date:
-        # Match 'MM/DD/YYYY to MM/DD/YYYY' range
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-    else:
-        # Matches $ amounts, 'Excluded', or 'N/A'. Negative lookahead stops at 'to' for dates.
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
-        
-    return match.group(0) if match else "---"
+    """Surgical horizontal scan. Finds label and scans ONLY its own row for data."""
+    lines = text.split('\n')
+    for line in lines:
+        if label.lower() in line.lower():
+            if is_date:
+                # Capture standard 'to' date range format
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
+            else:
+                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', line)
+            
+            if match: return match.group(0)
+            
+    # Fallback for wrapped labels: check the immediate next line if the current one is empty
+    for i, line in enumerate(lines):
+        if label.lower() in line.lower() and i+1 < len(lines):
+            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', lines[i+1])
+            if match: return match.group(0)
+            
+    return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical extraction of Name/Address to prevent bleed."""
+    """Surgical identity extraction that stops before metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
-            if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Hard stops at metadata markers to prevent address bleed
-    result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:|Address', result, flags=re.IGNORECASE)[0]
+    # Hard stop at metadata markers to prevent address bleed
+    result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: No citation markers in logic
+    # CLEAN LOGIC: All stray symbols and citations removed
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -103,7 +103,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Identity Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
