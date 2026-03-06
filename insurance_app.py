@@ -2,7 +2,6 @@ import streamlit as st
 import pypdf
 import io
 import re
-from datetime import datetime
 from reportlab.lib.pagesizes import LETTER
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -31,26 +30,29 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. EXTRACTION ENGINES
+# 3. ROBUST EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Surgical search for values. Prevents vertical bleed by staying on-line."""
-    lines = text.split('\n')
+    """Fuzzy search that handles line breaks and multi-line table rows."""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    
     for i, line in enumerate(lines):
-        if label.lower() in line.lower():
-            # If it's a date, we also check the line immediately below (common PDF wrap)
-            search_area = line
-            if is_date and i + 1 < len(lines):
+        # Collapse spaces to handle 'Surplus  Lines  Tax'
+        clean_line = " ".join(line.lower().split())
+        clean_label = " ".join(label.lower().split())
+        
+        if clean_label in clean_line:
+            # Check current line AND the next line (for values sitting below labels)
+            search_area = clean_line
+            if i + 1 < len(lines):
                 search_area += " " + lines[i+1]
             
             if is_date:
-                # MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
                 if match: return match.group(0)
             else:
-                # $ currency, 'Excluded', or 'N/A'
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
+                # Prioritize dollar amounts, then text statuses
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', search_area)
                 if match: return match.group(0)
-                
     return "---"
 
 def extract_clean_identity(text, label):
@@ -63,7 +65,6 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata seen in your address screenshots
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -112,35 +113,28 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits Table
-    gl_t = [["Commercial General Liability Coverage", "Limit"]]
-    for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
-    t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
-    elements.append(t1); elements.append(Spacer(1, 15))
+    # Tables
+    sections = [
+        ("Commercial General Liability Coverage", data['GL_Limits'], table_s),
+        ("Business Auto Coverage", data['Auto_Limits'], table_s),
+        ("General Liability Premium Summary", data['GL_Costs'], table_s),
+    ]
+    
+    for title, d_map, style in sections:
+        t_data = [[title, "Paid in Full" if "Premium" in title else "Limit"]]
+        for k, v in d_map.items(): t_data.append([k, v])
+        t = Table(t_data, colWidths=[380, 120]); t.setStyle(style)
+        elements.append(t); elements.append(Spacer(1, 15))
 
-    # Business Auto Limits Table
-    au_t = [["Business Auto Coverage", "Limit"]]
-    for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
-    t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
-    elements.append(t2); elements.append(Spacer(1, 15))
-
-    # Financial: CGL Premium Summary
-    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
-    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
-    elements.append(t3)
-    gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
-    t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
-    elements.append(t3b); elements.append(Spacer(1, 15))
-
-    # Financial: Auto Premium Summary
-    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
-    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
-    elements.append(t4)
-    au_tot = [["Total", data['Auto_Total']]]
-    t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
-    elements.append(t4b)
+    # Totals
+    elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
+    elements.append(Spacer(1, 15))
+    
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
+    elements.append(t_au)
+    elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
     doc.build(elements); buffer.seek(0)
     return buffer
@@ -153,14 +147,13 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Analyzing Carrier Documents..."):
-        for f in files:
-            reader = pypdf.PdfReader(f)
-            for page in reader.pages:
-                t = page.extract_text() or ""
-                cat = classify_page(t)
-                text_by_type[cat] += "\n" + t
-                buckets[cat].append(page)
+    for f in files:
+        reader = pypdf.PdfReader(f)
+        for page in reader.pages:
+            t = page.extract_text() or ""
+            cat = classify_page(t)
+            text_by_type[cat] += "\n" + t
+            buckets[cat].append(page)
 
     gl_text = text_by_type["Commercial General Liability Quote"]
     auto_text = text_by_type["Annual Business Auto Quote"]
