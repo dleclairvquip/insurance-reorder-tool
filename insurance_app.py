@@ -30,47 +30,49 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ROBUST EXTRACTION ENGINES
+# 3. ADVANCED EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Deep search that scans multiple lines to find values near labels."""
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    """Adaptive block search for labels and values that jump lines or columns."""
+    clean_text = " ".join(text.split())
+    # Normalize label for search
+    search_label = " ".join(label.lower().split())
     
-    for i, line in enumerate(lines):
-        # Normalize whitespace for label matching
-        clean_line = " ".join(line.lower().split())
-        clean_label = " ".join(label.lower().split())
+    idx = clean_text.lower().find(search_label)
+    if idx == -1: return "---"
+    
+    # Scan a large window after the label to capture values in distant columns
+    window = clean_text[idx : idx + 350]
+    
+    if is_date:
+        # MM/DD/YYYY to MM/DD/YYYY
+        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+    else:
+        # Currency, 'Excluded', or 'N/A'
+        # Prioritize the FIRST valid currency/status found after the label
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
         
-        if clean_label in clean_line:
-            # Create a 3-line search area to handle vertical table shifts
-            search_area = clean_line
-            if i + 1 < len(lines): search_area += " " + lines[i+1]
-            if i + 2 < len(lines): search_area += " " + lines[i+2]
-            
-            if is_date:
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
-                if match: return match.group(0)
-            else:
-                # Priority regex for dollar amounts sitting far right or below labels
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', search_area)
-                if match: return match.group(0)
-    return "---"
+    return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
+    """Specifically extracts Identity fields while blocking metadata bleed."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
-            if i + 1 < len(lines): result += " " + lines[i+1].strip()
-            if i + 2 < len(lines): result += " " + lines[i+2].strip()
+            # Look ahead for wrapped text
+            if i + 1 < len(lines) and len(result) < 5:
+                result += " " + lines[i+1].strip()
+            if i + 2 < len(lines) and len(result) < 20:
+                result += " " + lines[i+2].strip()
             break
-    # Cleans trailing metadata that bleeds into identity fields
+    # Clean trailing metadata
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
+    # Fixed logic with no invalid citations
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -106,7 +108,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Header Section
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -115,35 +117,31 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Section
-    t1_data = [["Commercial General Liability Coverage", "Limit"]]
-    for k, v in data['GL_Limits'].items(): t1_data.append([k, v])
-    t1 = Table(t1_data, colWidths=[380, 120]); t1.setStyle(table_s)
+    # CGL Table
+    gl_t = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
+    t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Section
-    t2_data = [["Business Auto Coverage", "Limit"]]
-    for k, v in data['Auto_Limits'].items(): t2_data.append([k, v])
-    t2 = Table(t2_data, colWidths=[380, 120]); t2.setStyle(table_s)
+    # Auto Table
+    au_t = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
+    t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # General Liability Premium Summary
+    # Financial Sections
     fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
     for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
     t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
     elements.append(t3)
-    gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
-    t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
-    elements.append(t3b); elements.append(Spacer(1, 15))
+    elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
+    elements.append(Spacer(1, 15))
 
-    # Business Auto Premium Summary
     fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
     for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
     t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
     elements.append(t4)
-    au_tot = [["Total", data['Auto_Total']]]
-    t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
-    elements.append(t4b)
+    elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
     doc.build(elements); buffer.seek(0)
     return buffer
