@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -32,25 +32,25 @@ MASTER_ORDER = [
 
 # 3. ROBUST EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Fuzzy search that handles line breaks and multi-line table rows."""
+    """Deep search that scans multiple lines to find values near labels."""
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     
     for i, line in enumerate(lines):
-        # Collapse spaces to handle 'Surplus  Lines  Tax'
+        # Normalize whitespace for label matching
         clean_line = " ".join(line.lower().split())
         clean_label = " ".join(label.lower().split())
         
         if clean_label in clean_line:
-            # Check current line AND the next line (for values sitting below labels)
+            # Create a 3-line search area to handle vertical table shifts
             search_area = clean_line
-            if i + 1 < len(lines):
-                search_area += " " + lines[i+1]
+            if i + 1 < len(lines): search_area += " " + lines[i+1]
+            if i + 2 < len(lines): search_area += " " + lines[i+2]
             
             if is_date:
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
                 if match: return match.group(0)
             else:
-                # Prioritize dollar amounts, then text statuses
+                # Priority regex for dollar amounts sitting far right or below labels
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', search_area)
                 if match: return match.group(0)
     return "---"
@@ -65,6 +65,7 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
+    # Cleans trailing metadata that bleeds into identity fields
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -91,6 +92,7 @@ def generate_exec_summary(data):
     
     label_s = ParagraphStyle('Label', parent=styles['Normal'], fontSize=11, fontName='Helvetica-Bold', spaceAfter=2)
     val_s = ParagraphStyle('Value', parent=styles['Normal'], fontSize=11, fontName='Helvetica', spaceAfter=12)
+    
     table_s = TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), NAVY), ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'), ('FONTSIZE', (0, 0), (-1, 0), 9),
@@ -113,28 +115,35 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Tables
-    sections = [
-        ("Commercial General Liability Coverage", data['GL_Limits'], table_s),
-        ("Business Auto Coverage", data['Auto_Limits'], table_s),
-        ("General Liability Premium Summary", data['GL_Costs'], table_s),
-    ]
-    
-    for title, d_map, style in sections:
-        t_data = [[title, "Paid in Full" if "Premium" in title else "Limit"]]
-        for k, v in d_map.items(): t_data.append([k, v])
-        t = Table(t_data, colWidths=[380, 120]); t.setStyle(style)
-        elements.append(t); elements.append(Spacer(1, 15))
+    # CGL Section
+    t1_data = [["Commercial General Liability Coverage", "Limit"]]
+    for k, v in data['GL_Limits'].items(): t1_data.append([k, v])
+    t1 = Table(t1_data, colWidths=[380, 120]); t1.setStyle(table_s)
+    elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Totals
-    elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
-    elements.append(Spacer(1, 15))
-    
-    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
-    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
-    elements.append(t_au)
-    elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
+    # Auto Section
+    t2_data = [["Business Auto Coverage", "Limit"]]
+    for k, v in data['Auto_Limits'].items(): t2_data.append([k, v])
+    t2 = Table(t2_data, colWidths=[380, 120]); t2.setStyle(table_s)
+    elements.append(t2); elements.append(Spacer(1, 15))
+
+    # General Liability Premium Summary
+    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
+    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
+    elements.append(t3)
+    gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
+    t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
+    elements.append(t3b); elements.append(Spacer(1, 15))
+
+    # Business Auto Premium Summary
+    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
+    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
+    elements.append(t4)
+    au_tot = [["Total", data['Auto_Total']]]
+    t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
+    elements.append(t4b)
 
     doc.build(elements); buffer.seek(0)
     return buffer
