@@ -35,25 +35,22 @@ MASTER_ORDER = [
 def get_clean_val(text, label, is_date=False):
     """Surgical search for values. Prevents vertical bleed by staying on-line."""
     lines = text.split('\n')
-    for line in lines:
+    for i, line in enumerate(lines):
         if label.lower() in line.lower():
-            # Specifically targets the 'MM/DD/YYYY to MM/DD/YYYY' range
+            # If it's a date, we also check the line immediately below (common PDF wrap)
+            search_area = line
+            if is_date and i + 1 < len(lines):
+                search_area += " " + lines[i+1]
+            
             if is_date:
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
+                # MM/DD/YYYY to MM/DD/YYYY
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
                 if match: return match.group(0)
             else:
-                # Prioritize dollar amounts, then text statuses like 'Excluded'
+                # $ currency, 'Excluded', or 'N/A'
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
                 if match: return match.group(0)
                 
-    # Fallback for complex table wrapping
-    clean_text = " ".join(text.split())
-    idx = clean_text.lower().find(label.lower())
-    if idx != -1:
-        window = clean_text[idx : idx + 150]
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
-        if match: return match.group(0)
-        
     return "---"
 
 def extract_clean_identity(text, label):
@@ -66,7 +63,7 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata seen in address screenshots
+    # Cleans metadata seen in your address screenshots
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -106,7 +103,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Section
+    # Header Information
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -150,13 +147,13 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload all Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Processing Documents..."):
+    with st.spinner("Analyzing Carrier Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -172,7 +169,7 @@ if files:
     s_data = {
         "Insured": extract_clean_identity(full_text, "Name Insured"), 
         "Address": extract_clean_identity(full_text, "Address"),
-        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True), # FIXED DATE RANGE
+        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True),
         "GL_Limits": {
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
@@ -186,10 +183,10 @@ if files:
             "BI per Accident": get_clean_val(auto_text, "Bodily Injury Liability per Accident"),
             "Property Damage per Accident": get_clean_val(auto_text, "Property Damage Liability"),
             "Collision": get_clean_val(auto_text, "Collision"),
-            "Comprehensive": get_clean_val(auto_text, "Comprehensive") # FIXED EXCLUDED STATUS
+            "Comprehensive": get_clean_val(auto_text, "Comprehensive")
         },
         "GL_Costs": {
-            "Premium": get_clean_val(gl_text, "Premium"), # FIXED PREMIUM VALUE
+            "Premium": get_clean_val(gl_text, "Premium"),
             "Surplus Lines Tax": get_clean_val(gl_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(gl_text, "Stamping Fee"),
             "vQuip Platform Fee": get_clean_val(gl_text, "vQuip Platform Fee")
