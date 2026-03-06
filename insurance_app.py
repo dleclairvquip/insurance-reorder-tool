@@ -37,17 +37,16 @@ def get_clean_val(text, label, is_date=False):
     lines = text.split('\n')
     for line in lines:
         if label.lower() in line.lower():
-            # Targets date ranges specifically
+            # Specifically targets the 'MM/DD/YYYY to MM/DD/YYYY' range
             if is_date:
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
                 if match: return match.group(0)
             else:
                 # Prioritize dollar amounts, then text statuses like 'Excluded'
-                # Uses a regex that avoids catching dates in the limit lines
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
                 if match: return match.group(0)
                 
-    # Fallback: Search the original way if row-scan fails
+    # Fallback for complex table wrapping
     clean_text = " ".join(text.split())
     idx = clean_text.lower().find(label.lower())
     if idx != -1:
@@ -67,12 +66,12 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
+    # Cleans metadata seen in address screenshots
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEANED: Citations removed from logic to prevent syntax errors
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -157,7 +156,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Analyzing Carrier Documents..."):
+    with st.spinner("Processing Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -173,7 +172,7 @@ if files:
     s_data = {
         "Insured": extract_clean_identity(full_text, "Name Insured"), 
         "Address": extract_clean_identity(full_text, "Address"),
-        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True),
+        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True), # FIXED DATE RANGE
         "GL_Limits": {
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
@@ -187,10 +186,10 @@ if files:
             "BI per Accident": get_clean_val(auto_text, "Bodily Injury Liability per Accident"),
             "Property Damage per Accident": get_clean_val(auto_text, "Property Damage Liability"),
             "Collision": get_clean_val(auto_text, "Collision"),
-            "Comprehensive": get_clean_val(auto_text, "Comprehensive")
+            "Comprehensive": get_clean_val(auto_text, "Comprehensive") # FIXED EXCLUDED STATUS
         },
         "GL_Costs": {
-            "Premium": get_clean_val(gl_text, "Premium"),
+            "Premium": get_clean_val(gl_text, "Premium"), # FIXED PREMIUM VALUE
             "Surplus Lines Tax": get_clean_val(gl_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(gl_text, "Stamping Fee"),
             "vQuip Platform Fee": get_clean_val(gl_text, "vQuip Platform Fee")
