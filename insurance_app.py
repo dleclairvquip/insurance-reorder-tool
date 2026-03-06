@@ -30,30 +30,34 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. FUZZY-ROW EXTRACTION ENGINE
+# 3. HORIZONTAL LOCK EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Surgical horizontal scan. Finds label and captures ONLY its own row for data."""
-    lines = [line.strip() for line in text.split('\n') if line.strip()]
-    for i, line in enumerate(lines):
-        if label.lower() in line.lower():
-            # Create a 2-line window to handle vertical table shifts
-            search_area = line
-            if i + 1 < len(lines):
-                search_area += " " + lines[i+1]
-            
-            if is_date:
-                # Capture standard 'to' date range format
-                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
-            else:
-                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
-                # This stops the Period of Insurance from bleeding into Comprehensive
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
-            
-            if match: return match.group(0)
-    return "---"
+    """
+    Finds the label and scans the immediate horizontal vicinity.
+    Uses negative lookahead to prevent date-bleed into currency fields.
+    """
+    # Normalize text to handle split-word labels
+    flat_text = " ".join(text.split())
+    search_label = " ".join(label.lower().split())
+    
+    idx = flat_text.lower().find(search_label)
+    if idx == -1: return "---"
+    
+    # Large window to reach across the table 'gutters'
+    window = flat_text[idx : idx + 450]
+    
+    if is_date:
+        # Specifically looks for the MM/DD/YYYY to MM/DD/YYYY pattern
+        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
+    else:
+        # REGEX: Finds $ amounts or 'Excluded'. 
+        # (?!.*to) ensures it skips the 'Period of Insurance' date range
+        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
+        
+    return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Specifically extracts Name/Address and stops exactly before metadata markers."""
+    """Extracts identity fields and stops exactly at the next section header."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -61,13 +65,13 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop to prevent 'Period of Insurance' bleed into identity
+    # Hard stop to prevent 'Period of Insurance' bleed into address
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: All stray symbols and citations removed
+    # STABLE CLASSIFICATION: No citation markers in logic
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -111,15 +115,15 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Limits and Costs Tables
+    # Limits and Costs
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
         ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
     ]
     
-    for title, d_map, header in sections:
-        t_data = [[title, header]]
+    for title, d_map, head in sections:
+        t_data = [[title, head]]
         for k, v in d_map.items(): t_data.append([k, v])
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
@@ -139,13 +143,13 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Analyzing Carrier Documents..."):
+    with st.spinner("Processing Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -188,14 +192,14 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Tech Transaction Fee")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
 
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("🚀 GENERATE ADVENTURESHIELD QUOTE PACKAGE"):
+        if st.button("🚀 GENERATE PACKAGE"):
             writer = pypdf.PdfWriter()
             for cat in MASTER_ORDER:
                 for p in buckets[cat]: writer.add_page(p)
@@ -205,6 +209,6 @@ if files:
             st.download_button("💾 DOWNLOAD PACKAGE", out_buf.getvalue(), "Package.pdf")
             
     with col2:
-        if st.button("📊 SUMMARY OF INSURANCE PAGE"):
+        if st.button("📊 GENERATE SUMMARY"):
             pdf_buf = generate_exec_summary(s_data)
             st.download_button("💾 DOWNLOAD SUMMARY", pdf_buf.getvalue(), "Summary.pdf")
