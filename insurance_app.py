@@ -30,44 +30,30 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
+# 3. FUZZY-ROW EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """
-    Surgical line scan. Identifies the label and searches ONLY its own row 
-    for the first valid dollar amount or status word.
-    """
-    lines = text.split('\n')
+    """Surgical horizontal scan. Finds label and captures ONLY its own row for data."""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
     for i, line in enumerate(lines):
-        # Normalize the label to handle split-word formatting like 'Surplus  Lines  Tax'
-        clean_line = " ".join(line.lower().split())
-        clean_label = " ".join(label.lower().split())
-        
-        if clean_label in clean_line:
-            # Check the current line first
+        if label.lower() in line.lower():
+            # Create a 2-line window to handle vertical table shifts
             search_area = line
+            if i + 1 < len(lines):
+                search_area += " " + lines[i+1]
             
-            # Fallback: If current line has no value, check only the immediate next line 
-            # (common for wrapped PDF grids)
             if is_date:
+                # Capture standard 'to' date range format
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # REGEX: Finds $ amounts or 'Excluded'. 
-                # Negative lookahead (?!.*to) stops header dates from being captured as limits
+                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
+                # This stops the Period of Insurance from bleeding into Comprehensive
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
             
-            if match:
-                return match.group(0)
-            
-            # Check one line down if nothing found on the anchor line
-            if i + 1 < len(lines):
-                next_line = lines[i+1]
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', next_line)
-                if match: return match.group(0)
-            
+            if match: return match.group(0)
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that stops exactly at metadata."""
+    """Specifically extracts Name/Address and stops exactly before metadata markers."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -81,6 +67,7 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
+    # CLEAN LOGIC: All stray symbols and citations removed
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -124,12 +111,13 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL & Auto Sections
+    # Limits and Costs Tables
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
         ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
     ]
+    
     for title, d_map, header in sections:
         t_data = [[title, header]]
         for k, v in d_map.items(): t_data.append([k, v])
@@ -157,7 +145,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Building Summary..."):
+    with st.spinner("Building Proposal..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -200,7 +188,7 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Tech Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
@@ -212,7 +200,8 @@ if files:
             for cat in MASTER_ORDER:
                 for p in buckets[cat]: writer.add_page(p)
             for p in buckets["Unclassified/Misc"]: writer.add_page(p)
-            out_buf = io.BytesIO(); writer.write(out_buf)
+            out_buf = io.BytesIO()
+            writer.write(out_buf)
             st.download_button("💾 DOWNLOAD PACKAGE", out_buf.getvalue(), "Package.pdf")
             
     with col2:
