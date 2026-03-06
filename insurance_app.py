@@ -30,31 +30,28 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. REBUILT EXTRACTION ENGINE
+# 3. FUZZY-ROW EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Clean slate search: normalizes the entire block and finds the unique value for that label."""
-    # Merge lines to fix split-label issues
-    flat_text = " ".join(text.split())
-    search_label = " ".join(label.lower().split())
-    
-    idx = flat_text.lower().find(search_label)
-    if idx == -1: return "---"
-    
-    # Large window to capture distant columns in the PDF grid
-    window = flat_text[idx : idx + 400]
-    
-    if is_date:
-        # Match standard date range format
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-    else:
-        # REGEX: Prioritizes currency, then 'Excluded'. 
-        # (?!.*to) ensures we don't grab a date range sitting in the same window.
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
-        
-    return match.group(0) if match else "---"
+    """Surgical horizontal scan with vertical fallback. Finds label and captures row data."""
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    for i, line in enumerate(lines):
+        if label.lower() in line.lower():
+            # Create a 2-line window to handle vertical table shifts
+            search_area = line
+            if i + 1 < len(lines):
+                search_area += " " + lines[i+1]
+            
+            if is_date:
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
+            else:
+                # REGEX: Prioritizes currency or 'Excluded'. Negative lookahead prevents header date bleed.
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
+            
+            if match: return match.group(0)
+    return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical extraction of Name/Address to prevent metadata bleed."""
+    """Specifically extracts Name/Address and stops exactly before metadata markers."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -62,13 +59,13 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop to prevent 'Period of Insurance' from bleeding into address
+    # Hard stop to prevent 'Period of Insurance' bleed into identity
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: All stray citations and syntax errors removed
+    # CLEAN LOGIC: Citations and stray symbols removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -112,7 +109,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # Limits and Costs
+    # Limits and Costs Tables
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -125,7 +122,7 @@ def generate_exec_summary(data):
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
-    # Final Totals
+    # Financial Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
     
@@ -189,7 +186,7 @@ if files:
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
-            "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
+            "Tech Transaction Fee": get_clean_val(auto_text, "Tech Transaction Fee")
         },
         "Auto_Total": get_clean_val(auto_text, "Total")
     }
