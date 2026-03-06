@@ -30,43 +30,38 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. COORDINATE-LOCKED EXTRACTION ENGINE
+# 3. ABSOLUTE HORIZONTAL LOCK ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Surgical row scan. Identifies the label and searches ONLY its own row 
-    for the first valid dollar amount or status word.
+    Finds the label and scans the immediate horizontal row.
+    Regex uses negative lookahead to block Period of Insurance dates from coverage fields.
     """
     lines = text.split('\n')
     for i, line in enumerate(lines):
-        # Normalize the label for split-word formatting
+        # Normalize the line to handle weird spacing
         clean_line = " ".join(line.lower().split())
         clean_label = " ".join(label.lower().split())
         
         if clean_label in clean_line:
-            # Check the anchor line first
+            # Create a small 2-line window for vertically 'split' table rows
             search_area = line
+            if i + 1 < len(lines):
+                search_area += " " + lines[i+1]
             
             if is_date:
                 # MM/DD/YYYY to MM/DD/YYYY
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # REGEX: Finds $ amounts or 'Excluded'. 
-                # (?!.*to) stops header dates from being captured as limits
+                # REGEX: Prioritizes currency or 'Excluded'.
+                # (?!.*to) is the 'Magic Bullet' - it forbids picking up any string containing 'to' (dates)
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
             
-            if match:
-                return match.group(0)
-            
-            # Contextual Fallback: Check one line down for misaligned PDF grids
-            if i + 1 < len(lines):
-                next_line = lines[i+1]
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', next_line)
-                if match: return match.group(0)
+            if match: return match.group(0)
             
     return "---"
 
 def extract_clean_identity(text, label):
-    """Surgical identity extraction that stops exactly at metadata."""
+    """Surgical identity extraction that stops exactly at metadata markers."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -74,12 +69,13 @@ def extract_clean_identity(text, label):
             result = line.split(label)[-1].strip().replace(":", "")
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop to prevent 'Period of Insurance' bleed into address
+    # Hard stop to prevent 'Period of Insurance' bleed into identity
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
+    # CLEAN LOGIC: No citation markers in logic
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -123,7 +119,7 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL & Auto Tables
+    # CGL, Auto, and Costs Tables
     sections = [
         ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
         ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
@@ -135,13 +131,12 @@ def generate_exec_summary(data):
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
 
-    # Financial Totals
+    # Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-    
-    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
-    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
+    au_costs = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_costs.append([k, v])
+    t_au = Table(au_costs, colWidths=[380, 120]); t_au.setStyle(table_s)
     elements.append(t_au)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
@@ -155,18 +150,15 @@ files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_fi
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
-    
-    with st.spinner("Building Summary..."):
-        for f in files:
-            reader = pypdf.PdfReader(f)
-            for page in reader.pages:
-                t = page.extract_text() or ""
-                cat = classify_page(t)
-                text_by_type[cat] += "\n" + t
-                buckets[cat].append(page)
+    for f in files:
+        reader = pypdf.PdfReader(f)
+        for page in reader.pages:
+            t = page.extract_text() or ""
+            cat = classify_page(t)
+            text_by_type[cat] += "\n" + t
+            buckets[cat].append(page)
 
-    gl_text = text_by_type["Commercial General Liability Quote"]
-    auto_text = text_by_type["Annual Business Auto Quote"]
+    gl_text, auto_text = text_by_type["Commercial General Liability Quote"], text_by_type["Annual Business Auto Quote"]
     full_text = "\n".join(text_by_type.values())
 
     s_data = {
