@@ -11,12 +11,12 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
 
-# 2. MASTER SEQUENCE [cite: 184, 198, 219, 238, 261, 271, 279, 316, 334, 365, 394]
+# 2. MASTER SEQUENCE
 MASTER_ORDER = [
     "Surplus Lines Disclosure",
     "Commercial General Liability Quote",
@@ -33,24 +33,25 @@ MASTER_ORDER = [
 
 # 3. EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Normalizes text and label. Uses a tight window for currency to prevent date-bleed."""
+    """Normalizes text and finds values. Tight window for currency to prevent date-bleed."""
     clean_text = " ".join(text.split())
     clean_label = " ".join(label.split())
     idx = clean_text.lower().find(clean_label.lower())
     if idx == -1: return "---"
     
-    window_size = 180 if is_date else 70 # Tight window for limits [cite: 213, 230]
+    window_size = 150 if is_date else 60 
     window = clean_text[idx : idx + window_size]
     
     if is_date:
         match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
     else:
+        # Specifically looks for currency or 'Excluded'
         match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
         
     return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts identity fields and aggressively strips trailing PDF metadata[cite: 202, 220]."""
+    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -59,23 +60,24 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Aggressive stripping to prevent address bleed [cite: 204, 206, 225]
-    result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date Quoted|Date:', result, flags=re.IGNORECASE)[0]
+    # Cleans metadata seen in Screenshot 2026-03-05 112448.png
+    result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure" [cite: 184]
-    if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering" [cite: 334]
-    if "small print" in t: return "The Small Print" [cite: 365]
-    if "commercial general liability" in t and "limit" in t and "forms" not in t: return "Commercial General Liability Quote" [cite: 198]
-    if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote" [cite: 219]
-    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details" [cite: 238]
+    # FIXED: Removed the invalid citation from the logic
+    if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
+    if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
+    if "small print" in t: return "The Small Print"
+    if "commercial general liability" in t and "limit" in t and "forms" not in t: return "Commercial General Liability Quote"
+    if "annual business auto" in t and "quote" in t and "forms" not in t: return "Annual Business Auto Quote"
+    if "blanket accident" in t and "details" in t: return "Blanket Accident - Full Details"
     if "forms" in t and "endorsements" in t:
-        return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements" [cite: 261, 271]
-    if "transfer risk" in t: return "Why its important to transfer risk and cost" [cite: 279]
-    if "how does it work" in t: return "OK so how does it work" [cite: 316]
-    if "overall program binding" in t: return "Overall Program Binding" [cite: 394]
+        return "Annual Business Auto Forms & Endorsements" if "auto" in t else "Commercial General Liability Forms & Endorsements"
+    if "transfer risk" in t: return "Why its important to transfer risk and cost"
+    if "how does it work" in t: return "OK so how does it work"
+    if "overall program binding" in t: return "Overall Program Binding"
     return "Unclassified/Misc"
 
 # 4. SUMMARY GENERATOR
@@ -99,7 +101,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Section [cite: 202, 204]
+    # Header Information (image_30dcef.png format)
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -108,30 +110,31 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits [cite: 213]
+    # CGL Limits (image_3136e3.png format)
     gl_t = [["Commercial General Liability Coverage", "Limit"]]
     for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Auto Limits [cite: 230]
+    # Auto Limits (image_313421.png format)
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
     elements.append(t2); elements.append(Spacer(1, 15))
 
-    # Financial Summary [cite: 215, 232]
-    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
-    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
+    # CGL Financial Summary (image_30dd4c.png format)
+    gl_fin = [["General Liability Premium Summary", "Paid in Full"]]
+    for k, v in data['GL_Costs'].items(): gl_fin.append([k, v])
+    t3 = Table(gl_fin, colWidths=[380, 120]); t3.setStyle(table_s)
     elements.append(t3)
     gl_tot = [["Total Premium & Taxes / Fees", data['GL_Total']]]
     t3b = Table(gl_tot, colWidths=[380, 120]); t3b.setStyle(total_bar_s)
     elements.append(t3b); elements.append(Spacer(1, 15))
 
-    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
-    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
+    # Auto Financial Summary (image_30dd84.png format)
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t4 = Table(au_fin, colWidths=[380, 120]); t4.setStyle(table_s)
     elements.append(t4)
     au_tot = [["Total", data['Auto_Total']]]
     t4b = Table(au_tot, colWidths=[380, 120]); t4b.setStyle(total_bar_s)
@@ -162,10 +165,10 @@ if files:
     auto_text = text_by_type["Annual Business Auto Quote"]
 
     s_data = {
-        "Insured": extract_clean_identity(full_text, "Name Insured"), # [cite: 202]
-        "Address": extract_clean_identity(full_text, "Address"), # [cite: 202]
-        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True), # [cite: 204]
-        "GL_Limits": { # [cite: 213]
+        "Insured": extract_clean_identity(full_text, "Name Insured"), 
+        "Address": extract_clean_identity(full_text, "Address"),
+        "Dates": get_clean_val(full_text, "Period of Insurance", is_date=True),
+        "GL_Limits": {
             "General Aggregate Limit": get_clean_val(gl_text, "General Aggregate Limit"),
             "Each Occurrence Limit": get_clean_val(gl_text, "Each Occurrence Limit"),
             "Products-Completed Ops": get_clean_val(gl_text, "Products - Completed Operations"),
@@ -173,32 +176,31 @@ if files:
             "Damage to Rented Premises": get_clean_val(gl_text, "Damage to Premises Rented"),
             "Medical Expense": get_clean_val(gl_text, "Medical Expense Limit")
         },
-        "Auto_Limits": { # [cite: 230]
+        "Auto_Limits": {
             "BI per Person": get_clean_val(auto_text, "Bodily Injury Liability per Person"),
             "BI per Accident": get_clean_val(auto_text, "Bodily Injury Liability per Accident"),
             "Property Damage per Accident": get_clean_val(auto_text, "Property Damage Liability"),
             "Collision": get_clean_val(auto_text, "Collision"),
             "Comprehensive": get_clean_val(auto_text, "Comprehensive")
         },
-        "GL_Costs": { # [cite: 215]
+        "GL_Costs": {
             "Premium": get_clean_val(gl_text, "Premium"),
             "Surplus Lines Tax": get_clean_val(gl_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(gl_text, "Stamping Fee"),
             "vQuip Platform Fee": get_clean_val(gl_text, "vQuip Platform Fee")
         },
-        "GL_Total": get_clean_val(gl_text, "Total Premium & Taxes / Fees"), # [cite: 215]
-        "Auto_Costs": { # [cite: 232]
+        "GL_Total": get_clean_val(gl_text, "Total Premium & Taxes / Fees"),
+        "Auto_Costs": {
             "Annual Premium": get_clean_val(auto_text, "Annual Premium"),
             "Surplus Lines Tax": get_clean_val(auto_text, "Surplus Lines Tax"),
             "Stamping Fee": get_clean_val(auto_text, "Stamping Fee"),
             "Tech Transaction Fee": get_clean_val(auto_text, "Technology Transaction Fee")
         },
-        "Auto_Total": get_clean_val(auto_text, "Total") # [cite: 232]
+        "Auto_Total": get_clean_val(auto_text, "Total")
     }
 
     col1, col2 = st.columns(2)
     with col1:
-        # UPDATED BUTTON WORDING
         if st.button("🚀 GENERATE ADVENTURESHIELD QUOTE PACKAGE"):
             writer = pypdf.PdfWriter()
             for cat in MASTER_ORDER:
@@ -209,7 +211,6 @@ if files:
             st.download_button("💾 DOWNLOAD PACKAGE", out_buf.getvalue(), "Package.pdf")
             
     with col2:
-        # UPDATED BUTTON WORDING
         if st.button("📊 SUMMARY OF INSURANCE PAGE"):
             pdf_buf = generate_exec_summary(s_data)
             st.download_button("💾 DOWNLOAD SUMMARY", pdf_buf.getvalue(), "Summary.pdf")
