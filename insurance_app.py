@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,41 +30,45 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. GRID-AWARE EXTRACTION ENGINE
+# 3. ANCHOR-BASED EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Surgical search: finds label and captures only values on that specific row."""
+    """Surgical horizontal scan. Finds label and scans ONLY its own row for a match."""
     lines = text.split('\n')
     for line in lines:
         if label.lower() in line.lower():
             if is_date:
-                # MM/DD/YYYY to MM/DD/YYYY
+                # Capture standard 'to' date range format
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
             else:
-                # Prioritize dollar amounts, then text statuses like 'Excluded'
-                # Prevents catching header dates by looking for $ or Excluded specifically
-                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
+                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', line)
             
             if match: return match.group(0)
+            
+    # Fallback for wrapped labels: check the immediate next line if the current one is empty
+    for i, line in enumerate(lines):
+        if label.lower() in line.lower() and i+1 < len(lines):
+            match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', lines[i+1])
+            if match: return match.group(0)
+            
     return "---"
 
 def extract_clean_identity(text, label):
-    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
+    """Surgical identity extraction to stop address bleed."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
-            # Capture wrapped multi-line addresses
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
-            if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Hard stop at section markers
+    # Hard stop at metadata markers to prevent bleed
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # STABLE LOGIC: Citations removed to prevent NameError
+    # CLEAN LOGIC: Stray symbols and citations removed
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -99,7 +103,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Header Identity
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -108,31 +112,27 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Table
-    gl_t = [["Commercial General Liability Coverage", "Limit"]]
-    for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
-    t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
-    elements.append(t1); elements.append(Spacer(1, 15))
+    # Limits and Premiums
+    sections = [
+        ("Commercial General Liability Coverage", data['GL_Limits'], "Limit"),
+        ("Business Auto Coverage", data['Auto_Limits'], "Limit"),
+        ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
+    ]
+    
+    for title, d_map, header in sections:
+        t_data = [[title, header]]
+        for k, v in d_map.items(): t_data.append([k, v])
+        t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
+        elements.append(t); elements.append(Spacer(1, 15))
 
-    # Auto Table
-    au_t = [["Business Auto Coverage", "Limit"]]
-    for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
-    t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
-    elements.append(t2); elements.append(Spacer(1, 15))
-
-    # CGL Financial Summary
-    fin_gl = [["General Liability Premium Summary", "Paid in Full"]]
-    for k, v in data['GL_Costs'].items(): fin_gl.append([k, v])
-    t3 = Table(fin_gl, colWidths=[380, 120]); t3.setStyle(table_s)
-    elements.append(t3)
+    # Financial Totals
     elements.append(Table([["Total Premium & Taxes / Fees", data['GL_Total']]], colWidths=[380, 120], style=total_bar_s))
     elements.append(Spacer(1, 15))
-
-    # Auto Financial Summary
-    fin_au = [["Business Auto Premium Summary", "Paid in Full"]]
-    for k, v in data['Auto_Costs'].items(): fin_au.append([k, v])
-    t4 = Table(fin_au, colWidths=[380, 120]); t4.setStyle(table_s)
-    elements.append(t4)
+    
+    au_fin = [["Business Auto Premium Summary", "Paid in Full"]]
+    for k, v in data['Auto_Costs'].items(): au_fin.append([k, v])
+    t_au = Table(au_fin, colWidths=[380, 120]); t_au.setStyle(table_s)
+    elements.append(t_au)
     elements.append(Table([["Total", data['Auto_Total']]], colWidths=[380, 120], style=total_bar_s))
 
     doc.build(elements); buffer.seek(0)
@@ -140,7 +140,7 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
