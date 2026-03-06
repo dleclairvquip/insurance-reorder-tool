@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# Visual Palette
+# vQuip Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -32,7 +32,7 @@ MASTER_ORDER = [
 
 # 3. FUZZY-ROW EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
-    """Surgical horizontal scan with vertical fallback. Finds label and captures row data."""
+    """Surgical horizontal scan. Finds label and captures ONLY its own row for data."""
     lines = [line.strip() for line in text.split('\n') if line.strip()]
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
@@ -42,9 +42,11 @@ def get_clean_val(text, label, is_date=False):
                 search_area += " " + lines[i+1]
             
             if is_date:
+                # Capture standard 'to' date range format
                 match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', search_area)
             else:
-                # REGEX: Prioritizes currency or 'Excluded'. Negative lookahead prevents header date bleed.
+                # REGEX: Finds $ amounts or 'Excluded' but ignores dates via negative lookahead
+                # This stops the Period of Insurance from bleeding into Comprehensive
                 match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', search_area)
             
             if match: return match.group(0)
@@ -65,7 +67,7 @@ def extract_clean_identity(text, label):
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # CLEAN LOGIC: Citations and stray symbols removed to prevent NameError
+    # CLEAN LOGIC: All stray symbols and citations removed
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
