@@ -10,7 +10,7 @@ from reportlab.lib import colors
 # 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# vQuip Visual Palette
+# Visual Palette
 NAVY = colors.Color(5/255, 18/255, 23/255) 
 TEAL = colors.Color(60/255, 148/255, 166/255) 
 LIGHT_GRAY = colors.Color(245/255, 245/255, 245/255)
@@ -30,48 +30,49 @@ MASTER_ORDER = [
     "Overall Program Binding"
 ]
 
-# 3. HORIZONTAL LOCK EXTRACTION ENGINE
+# 3. CONTEXT-AWARE EXTRACTION ENGINE
 def get_clean_val(text, label, is_date=False):
     """
-    Finds the label and scans the immediate horizontal vicinity.
-    Uses negative lookahead to prevent date-bleed into currency fields.
+    Stabilized extraction that flattens coordinates and uses a multi-pass regex.
+    Ensures currency is prioritized and dates are excluded from limit fields.
     """
-    # Normalize text to handle split-word labels
+    # Flatten text to handle split labels and distant columns
     flat_text = " ".join(text.split())
     search_label = " ".join(label.lower().split())
     
     idx = flat_text.lower().find(search_label)
     if idx == -1: return "---"
     
-    # Large window to reach across the table 'gutters'
-    window = flat_text[idx : idx + 450]
+    # Scanning a 400-character window to jump across table columns
+    window = flat_text[idx : idx + 400]
     
     if is_date:
-        # Specifically looks for the MM/DD/YYYY to MM/DD/YYYY pattern
+        # Match 'MM/DD/YYYY to MM/DD/YYYY' range
         match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
     else:
-        # REGEX: Finds $ amounts or 'Excluded'. 
-        # (?!.*to) ensures it skips the 'Period of Insurance' date range
+        # REGEX: Prioritizes currency or 'Excluded'. 
+        # Negative lookahead (?!.*to) ensures header dates are ignored.
         match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?(?!\s+to)|Excluded|N/A', window)
         
     return match.group(0) if match else "---"
 
 def extract_clean_identity(text, label):
-    """Extracts identity fields and stops exactly at the next section header."""
+    """Surgical extraction of Name/Address that hard-stops at metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
         if label.lower() in line.lower():
             result = line.split(label)[-1].strip().replace(":", "")
+            # Capture multi-line addresses common in these headers
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             break
-    # Hard stop to prevent 'Period of Insurance' bleed into address
+    # Hard stops to prevent 'Period of Insurance' bleed into address
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
 def classify_page(text):
     t = " ".join(text.lower().split())
-    # STABLE CLASSIFICATION: No citation markers in logic
+    # STABLE LOGIC: Citations and stray characters removed to prevent NameError
     if "surplus lines" in t and "disclosure" in t: return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t: return "Notice of Terrorism Coverage Offering"
     if "small print" in t: return "The Small Print"
@@ -122,8 +123,8 @@ def generate_exec_summary(data):
         ("General Liability Premium Summary", data['GL_Costs'], "Paid in Full"),
     ]
     
-    for title, d_map, head in sections:
-        t_data = [[title, head]]
+    for title, d_map, header in sections:
+        t_data = [[title, header]]
         for k, v in d_map.items(): t_data.append([k, v])
         t = Table(t_data, colWidths=[380, 120]); t.setStyle(table_s)
         elements.append(t); elements.append(Spacer(1, 15))
@@ -143,13 +144,13 @@ def generate_exec_summary(data):
 
 # --- MAIN APP ---
 st.title("🛡️ Adventure Shield Proposal Builder")
-files = st.file_uploader("Upload Quote PDFs", type="pdf", accept_multiple_files=True)
+files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Processing Documents..."):
+    with st.spinner("Building Proposal..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
