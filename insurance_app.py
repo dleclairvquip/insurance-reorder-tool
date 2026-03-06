@@ -33,26 +33,22 @@ MASTER_ORDER = [
 
 # 3. EXTRACTION ENGINES
 def get_clean_val(text, label, is_date=False):
-    """Finds values with adaptive windows. Stays on-row to prevent date-bleed into limits."""
-    clean_text = " ".join(text.split())
-    clean_label = " ".join(label.split())
-    idx = clean_text.lower().find(clean_label.lower())
-    if idx == -1: return "---"
-    
-    # Dates need a larger window; Limits need a very tight one to stay on the correct row
-    window_size = 180 if is_date else 90 
-    window = clean_text[idx : idx + window_size]
-    
-    if is_date:
-        match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', window)
-    else:
-        # Prioritizes dollar amounts, then 'Excluded' or 'N/A'
-        match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', window)
-        
-    return match.group(0) if match else "---"
+    """Surgical search for values. Prevents vertical bleed by staying on-line."""
+    lines = text.split('\n')
+    for line in lines:
+        if label.lower() in line.lower():
+            # Targets currency, 'Excluded', 'N/A', or date ranges
+            if is_date:
+                match = re.search(r'\d{1,2}/\d{1,2}/\d{2,4}\s+to\s+\d{1,2}/\d{1,2}/\d{2,4}', line)
+            else:
+                # Prioritize $ amounts, then text statuses
+                match = re.search(r'\$\d{1,3}(?:,\d{3})*(?:\.\d{2})?|Excluded|N/A', line)
+            
+            if match: return match.group(0)
+    return "---"
 
 def extract_clean_identity(text, label):
-    """Extracts identity fields and aggressively strips trailing PDF metadata."""
+    """Extracts Name or Address and aggressively strips trailing PDF metadata."""
     lines = text.split('\n')
     result = ""
     for i, line in enumerate(lines):
@@ -61,7 +57,6 @@ def extract_clean_identity(text, label):
             if i + 1 < len(lines): result += " " + lines[i+1].strip()
             if i + 2 < len(lines): result += " " + lines[i+2].strip()
             break
-    # Cleans metadata to prevent address bleed
     result = re.split(r'Period of Insurance|Quote Valid|Date Quoted|Carrier|Date:', result, flags=re.IGNORECASE)[0]
     return " ".join(result.split()).strip()
 
@@ -101,7 +96,7 @@ def generate_exec_summary(data):
     ])
 
     elements = []
-    # Header Information
+    # Identity Block
     elements.append(Paragraph("Name Insured", label_s))
     elements.append(Paragraph(data['Insured'], val_s))
     elements.append(Paragraph("Address", label_s))
@@ -110,13 +105,13 @@ def generate_exec_summary(data):
     elements.append(Paragraph(data['Dates'], val_s))
     elements.append(Spacer(1, 10))
 
-    # CGL Limits Table
+    # CGL Limits
     gl_t = [["Commercial General Liability Coverage", "Limit"]]
     for k, v in data['GL_Limits'].items(): gl_t.append([k, v])
     t1 = Table(gl_t, colWidths=[380, 120]); t1.setStyle(table_s)
     elements.append(t1); elements.append(Spacer(1, 15))
 
-    # Business Auto Limits Table
+    # Auto Limits
     au_t = [["Business Auto Coverage", "Limit"]]
     for k, v in data['Auto_Limits'].items(): au_t.append([k, v])
     t2 = Table(au_t, colWidths=[380, 120]); t2.setStyle(table_s)
@@ -150,7 +145,7 @@ if files:
     buckets = {name: [] for name in MASTER_ORDER}; buckets["Unclassified/Misc"] = []
     text_by_type = {name: "" for name in MASTER_ORDER}; text_by_type["Unclassified/Misc"] = ""
     
-    with st.spinner("Processing Documents..."):
+    with st.spinner("Analyzing Carrier Documents..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
