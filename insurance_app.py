@@ -15,18 +15,10 @@ st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="�
 # ── 2. CUSTOM CSS
 st.markdown("""
 <style>
-    /* Base */
-    [data-testid="stAppViewContainer"] {
-        background-color: #0F1923;
-    }
-    [data-testid="stSidebar"] {
-        background-color: #0F1923;
-    }
-    section[data-testid="stMain"] {
-        background-color: #0F1923;
-    }
+    [data-testid="stAppViewContainer"] { background-color: #0F1923; }
+    [data-testid="stSidebar"] { background-color: #0F1923; }
+    section[data-testid="stMain"] { background-color: #0F1923; }
 
-    /* Header banner */
     .hero-banner {
         background: linear-gradient(135deg, #1B2A4A 0%, #2E7D8C 100%);
         border-radius: 16px;
@@ -34,163 +26,39 @@ st.markdown("""
         margin-bottom: 32px;
         border: 1px solid #2E7D8C;
     }
-    .hero-title {
-        font-size: 42px;
-        font-weight: 800;
-        color: #FFFFFF;
-        letter-spacing: -1px;
-        margin: 0;
-        line-height: 1.1;
-    }
-    .hero-subtitle {
-        font-size: 16px;
-        color: #A8C4C8;
-        margin-top: 8px;
-        font-weight: 400;
-    }
-    .hero-badge {
-        display: inline-block;
-        background: rgba(255,255,255,0.15);
-        color: #FFFFFF;
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 2px;
-        text-transform: uppercase;
-        padding: 4px 12px;
-        border-radius: 20px;
-        margin-bottom: 16px;
-    }
+    .hero-title { font-size: 42px; font-weight: 800; color: #FFFFFF; letter-spacing: -1px; margin: 0; line-height: 1.1; }
+    .hero-subtitle { font-size: 16px; color: #A8C4C8; margin-top: 8px; font-weight: 400; }
+    .hero-badge { display: inline-block; background: rgba(255,255,255,0.15); color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; }
 
-    /* Upload area */
-    [data-testid="stFileUploader"] {
-        background: #1A2535;
-        border: 2px dashed #2E7D8C;
-        border-radius: 12px;
-        padding: 12px;
-    }
-    [data-testid="stFileUploader"]:hover {
-        border-color: #C9A84C;
-    }
+    [data-testid="stFileUploader"] { background: #1A2535; border: 2px dashed #2E7D8C; border-radius: 12px; padding: 12px; }
+    [data-testid="stFileUploader"]:hover { border-color: #C9A84C; }
+    [data-testid="stAlert"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; color: #A8C4C8 !important; }
 
-    /* Info box override */
-    [data-testid="stAlert"] {
-        background: #1A2535 !important;
-        border: 1px solid #2E7D8C !important;
-        border-radius: 10px !important;
-        color: #A8C4C8 !important;
-    }
+    .section-header { font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: #2E7D8C; margin: 32px 0 16px 0; }
 
-    /* Section headers */
-    .section-header {
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: #2E7D8C;
-        margin: 32px 0 16px 0;
-    }
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 24px; }
+    .status-card { background: #1A2535; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; border: 1px solid #263548; }
+    .status-card.success { border-left: 3px solid #2E7D8C; }
+    .status-card.warning { border-left: 3px solid #C9A84C; opacity: 0.6; }
+    .status-card.error { border-left: 3px solid #E05555; }
+    .status-icon { font-size: 18px; min-width: 24px; }
+    .status-label { font-size: 13px; font-weight: 600; color: #FFFFFF; }
+    .status-count { font-size: 12px; color: #6B8A9A; margin-top: 2px; }
 
-    /* Status cards */
-    .status-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 10px;
-        margin-bottom: 24px;
-    }
-    .status-card {
-        background: #1A2535;
-        border-radius: 10px;
-        padding: 12px 16px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        border: 1px solid #263548;
-    }
-    .status-card.success {
-        border-left: 3px solid #2E7D8C;
-    }
-    .status-card.warning {
-        border-left: 3px solid #C9A84C;
-        opacity: 0.6;
-    }
-    .status-card.error {
-        border-left: 3px solid #E05555;
-    }
-    .status-icon {
-        font-size: 18px;
-        min-width: 24px;
-    }
-    .status-label {
-        font-size: 13px;
-        font-weight: 600;
-        color: #FFFFFF;
-    }
-    .status-count {
-        font-size: 12px;
-        color: #6B8A9A;
-        margin-top: 2px;
-    }
+    [data-testid="stButton"] > button { background: linear-gradient(135deg, #2E7D8C, #1B5E6E) !important; color: white !important; font-weight: 700 !important; font-size: 15px !important; letter-spacing: 1px !important; border: none !important; border-radius: 10px !important; padding: 14px 32px !important; width: 100% !important; }
+    [data-testid="stButton"] > button:hover { background: linear-gradient(135deg, #C9A84C, #A8872E) !important; transform: translateY(-1px) !important; }
 
-    /* Generate button */
-    [data-testid="stButton"] > button {
-        background: linear-gradient(135deg, #2E7D8C, #1B5E6E) !important;
-        color: white !important;
-        font-weight: 700 !important;
-        font-size: 15px !important;
-        letter-spacing: 1px !important;
-        border: none !important;
-        border-radius: 10px !important;
-        padding: 14px 32px !important;
-        width: 100% !important;
-        transition: all 0.2s !important;
-    }
-    [data-testid="stButton"] > button:hover {
-        background: linear-gradient(135deg, #C9A84C, #A8872E) !important;
-        transform: translateY(-1px) !important;
-    }
+    [data-testid="stDownloadButton"] > button { background: #1A2535 !important; color: #FFFFFF !important; font-weight: 600 !important; font-size: 14px !important; border: 2px solid #2E7D8C !important; border-radius: 10px !important; padding: 12px 24px !important; width: 100% !important; }
+    [data-testid="stDownloadButton"] > button:hover { background: #2E7D8C !important; border-color: #2E7D8C !important; transform: translateY(-1px) !important; }
 
-    /* Download buttons */
-    [data-testid="stDownloadButton"] > button {
-        background: #1A2535 !important;
-        color: #FFFFFF !important;
-        font-weight: 600 !important;
-        font-size: 14px !important;
-        border: 2px solid #2E7D8C !important;
-        border-radius: 10px !important;
-        padding: 12px 24px !important;
-        width: 100% !important;
-        transition: all 0.2s !important;
-    }
-    [data-testid="stDownloadButton"] > button:hover {
-        background: #2E7D8C !important;
-        border-color: #2E7D8C !important;
-        transform: translateY(-1px) !important;
-    }
+    [data-testid="stSuccess"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; }
 
-    /* Success message */
-    [data-testid="stSuccess"] {
-        background: #1A2535 !important;
-        border: 1px solid #2E7D8C !important;
-        border-radius: 10px !important;
-    }
-
-    /* Spinner */
-    [data-testid="stSpinner"] {
-        color: #2E7D8C !important;
-    }
-
-    /* Hide default streamlit header/footer */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
 
-    /* General text */
-    p, li, span, label {
-        color: #A8C4C8;
-    }
-    h1, h2, h3 {
-        color: #FFFFFF;
-    }
+    p, li, span, label { color: #A8C4C8; }
+    h1, h2, h3 { color: #FFFFFF; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -274,7 +142,7 @@ def extract_coverage_data(buckets):
         "gl_premium":        search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
         "gl_surplus_tax":    search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
         "gl_stamp_fee":      search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":   search(gl_text,   r"vQuip Platform Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":   search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
         "gl_total_premium":  search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
         "auto_carrier":      search(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":    search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
@@ -397,7 +265,7 @@ def generate_summary_pdf(data: dict) -> bytes:
         ["Premium",                           fmt(data.get("gl_premium",       "—"), currency=True)],
         ["Surplus Lines Tax",                 fmt(data.get("gl_surplus_tax",   "—"), currency=True)],
         ["Stamping Fee",                      fmt(data.get("gl_stamp_fee",     "—"), currency=True)],
-        ["vQuip Platform Fee",                fmt(data.get("gl_platform_fee",  "—"), currency=True)],
+        ["Platform Fee",                      fmt(data.get("gl_platform_fee",  "—"), currency=True)],
         ["Total Premium & Taxes / Fees",      fmt(data.get("gl_total_premium", "—"), currency=True)],
     ]))
     story.append(Spacer(1, 14))
@@ -415,12 +283,12 @@ def generate_summary_pdf(data: dict) -> bytes:
     return buffer.getvalue()
 
 
-# ── MAIN APP ─────────────────────────────────────────────────────────────────
+# ── MAIN APP ──────────────────────────────────────────────────────────────────
 
 # Hero Banner
 st.markdown("""
 <div class="hero-banner">
-    <div class="hero-badge">🛡️ vQuip Insurance</div>
+    <div class="hero-badge">🛡️ Insurance</div>
     <div class="hero-title">Adventure Shield</div>
     <div class="hero-title" style="color: #2E7D8C;">Proposal Builder</div>
     <div class="hero-subtitle">Upload your carrier documents — we'll sort, reorder, and package them automatically.</div>
@@ -452,7 +320,6 @@ if files:
     st.markdown('<div class="section-header">📋 Document Classification</div>', unsafe_allow_html=True)
 
     cards_html = '<div class="status-grid">'
-    all_found = True
     for category in MASTER_ORDER:
         count = len(buckets[category])
         if count > 0:
@@ -465,7 +332,6 @@ if files:
                 </div>
             </div>"""
         else:
-            all_found = False
             cards_html += f"""
             <div class="status-card warning">
                 <div class="status-icon">⚠️</div>
@@ -493,7 +359,6 @@ if files:
     st.markdown('<div class="section-header">🚀 Generate Package</div>', unsafe_allow_html=True)
     if st.button("GENERATE ORDERED PACKAGE + COVERAGE SUMMARY"):
         with st.spinner("Building your package..."):
-            # Merge PDFs
             writer = pypdf.PdfWriter()
             for category in MASTER_ORDER:
                 for page in buckets[category]:
@@ -504,7 +369,6 @@ if files:
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
-            # Coverage summary
             coverage_data = extract_coverage_data(buckets)
             summary_pdf_bytes = generate_summary_pdf(coverage_data)
 
