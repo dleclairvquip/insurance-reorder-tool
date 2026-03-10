@@ -12,7 +12,189 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 # ── 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# ── 2. MASTER SEQUENCE
+# ── 2. CUSTOM CSS
+st.markdown("""
+<style>
+    /* Base */
+    [data-testid="stAppViewContainer"] {
+        background-color: #0F1923;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #0F1923;
+    }
+    section[data-testid="stMain"] {
+        background-color: #0F1923;
+    }
+
+    /* Header banner */
+    .hero-banner {
+        background: linear-gradient(135deg, #1B2A4A 0%, #2E7D8C 100%);
+        border-radius: 16px;
+        padding: 40px 48px;
+        margin-bottom: 32px;
+        border: 1px solid #2E7D8C;
+    }
+    .hero-title {
+        font-size: 42px;
+        font-weight: 800;
+        color: #FFFFFF;
+        letter-spacing: -1px;
+        margin: 0;
+        line-height: 1.1;
+    }
+    .hero-subtitle {
+        font-size: 16px;
+        color: #A8C4C8;
+        margin-top: 8px;
+        font-weight: 400;
+    }
+    .hero-badge {
+        display: inline-block;
+        background: rgba(255,255,255,0.15);
+        color: #FFFFFF;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        padding: 4px 12px;
+        border-radius: 20px;
+        margin-bottom: 16px;
+    }
+
+    /* Upload area */
+    [data-testid="stFileUploader"] {
+        background: #1A2535;
+        border: 2px dashed #2E7D8C;
+        border-radius: 12px;
+        padding: 12px;
+    }
+    [data-testid="stFileUploader"]:hover {
+        border-color: #C9A84C;
+    }
+
+    /* Info box override */
+    [data-testid="stAlert"] {
+        background: #1A2535 !important;
+        border: 1px solid #2E7D8C !important;
+        border-radius: 10px !important;
+        color: #A8C4C8 !important;
+    }
+
+    /* Section headers */
+    .section-header {
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        color: #2E7D8C;
+        margin: 32px 0 16px 0;
+    }
+
+    /* Status cards */
+    .status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 10px;
+        margin-bottom: 24px;
+    }
+    .status-card {
+        background: #1A2535;
+        border-radius: 10px;
+        padding: 12px 16px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        border: 1px solid #263548;
+    }
+    .status-card.success {
+        border-left: 3px solid #2E7D8C;
+    }
+    .status-card.warning {
+        border-left: 3px solid #C9A84C;
+        opacity: 0.6;
+    }
+    .status-card.error {
+        border-left: 3px solid #E05555;
+    }
+    .status-icon {
+        font-size: 18px;
+        min-width: 24px;
+    }
+    .status-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: #FFFFFF;
+    }
+    .status-count {
+        font-size: 12px;
+        color: #6B8A9A;
+        margin-top: 2px;
+    }
+
+    /* Generate button */
+    [data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #2E7D8C, #1B5E6E) !important;
+        color: white !important;
+        font-weight: 700 !important;
+        font-size: 15px !important;
+        letter-spacing: 1px !important;
+        border: none !important;
+        border-radius: 10px !important;
+        padding: 14px 32px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }
+    [data-testid="stButton"] > button:hover {
+        background: linear-gradient(135deg, #C9A84C, #A8872E) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* Download buttons */
+    [data-testid="stDownloadButton"] > button {
+        background: #1A2535 !important;
+        color: #FFFFFF !important;
+        font-weight: 600 !important;
+        font-size: 14px !important;
+        border: 2px solid #2E7D8C !important;
+        border-radius: 10px !important;
+        padding: 12px 24px !important;
+        width: 100% !important;
+        transition: all 0.2s !important;
+    }
+    [data-testid="stDownloadButton"] > button:hover {
+        background: #2E7D8C !important;
+        border-color: #2E7D8C !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* Success message */
+    [data-testid="stSuccess"] {
+        background: #1A2535 !important;
+        border: 1px solid #2E7D8C !important;
+        border-radius: 10px !important;
+    }
+
+    /* Spinner */
+    [data-testid="stSpinner"] {
+        color: #2E7D8C !important;
+    }
+
+    /* Hide default streamlit header/footer */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+
+    /* General text */
+    p, li, span, label {
+        color: #A8C4C8;
+    }
+    h1, h2, h3 {
+        color: #FFFFFF;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ── 3. MASTER SEQUENCE
 MASTER_ORDER = [
     "Surplus Lines Disclosure",
     "Commercial General Liability Quote",
@@ -28,7 +210,7 @@ MASTER_ORDER = [
 ]
 
 
-# ── 3. CLASSIFICATION
+# ── 4. CLASSIFICATION
 def classify_page(text):
     t = " ".join(text.lower().split())
 
@@ -58,7 +240,7 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# ── 4. DATA EXTRACTION
+# ── 5. DATA EXTRACTION
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
@@ -75,7 +257,6 @@ def extract_coverage_data(buckets):
     all_text  = gl_text + "\n" + auto_text
 
     return {
-        # Policy info
         "insured":           search(all_text,
                                 r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
                                 r"Name(?:d)? Insured\s*\n([^\n]+)"),
@@ -83,73 +264,37 @@ def extract_coverage_data(buckets):
                                 r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
         "expiry_date":       search(all_text,
                                 r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
-
-        # GL carrier
-        "gl_carrier":        search(gl_text,
-                                r"Carrier\s+([^\n]+)"),
-
-        # GL limits
-        "gl_aggregate":      search(gl_text,
-                                r"General Aggregate Limit[^$]*\$([0-9,]+)"),
-        "gl_occurrence":     search(gl_text,
-                                r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
-        "gl_products":       search(gl_text,
-                                r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
-        "gl_pi":             search(gl_text,
-                                r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
-        "gl_premises":       search(gl_text,
-                                r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
-        "gl_med_exp":        search(gl_text,
-                                r"Medical Expense Limit\s+\$([0-9,]+)"),
-
-        # GL premiums
-        "gl_premium":        search(gl_text,
-                                r"^Premium\s+\$([0-9,]+\.\d{2})"),
-        "gl_surplus_tax":    search(gl_text,
-                                r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":      search(gl_text,
-                                r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":   search(gl_text,
-                                r"vQuip Platform Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":  search(gl_text,
-                                r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
-
-        # Auto carrier
-        "auto_carrier":      search(auto_text,
-                                r"Carrier\s+([^\n]+)"),
-
-        # Auto limits
-        "auto_bi_person":    search(auto_text,
-                                r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
-        "auto_bi_acc":       search(auto_text,
-                                r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_pd":           search(auto_text,
-                                r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-
-        # Auto premiums
-        "auto_premium":      search(auto_text,
-                                r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
-        "auto_surplus_tax":  search(auto_text,
-                                r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":    search(auto_text,
-                                r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "auto_tech_fee":     search(auto_text,
-                                r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
-        "auto_total":        search(auto_text,
-                                r"^Total\s+\$([0-9,]+\.\d{2})"),
+        "gl_carrier":        search(gl_text,   r"Carrier\s+([^\n]+)"),
+        "gl_aggregate":      search(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
+        "gl_occurrence":     search(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
+        "gl_products":       search(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
+        "gl_pi":             search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
+        "gl_premises":       search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
+        "gl_med_exp":        search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
+        "gl_premium":        search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":    search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":      search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":   search(gl_text,   r"vQuip Platform Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":  search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
+        "auto_carrier":      search(auto_text, r"Carrier\s+([^\n]+)"),
+        "auto_bi_person":    search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
+        "auto_bi_acc":       search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_pd":           search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_premium":      search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":  search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":    search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_tech_fee":     search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
+        "auto_total":        search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
     }
 
 
-# ── 5. SUMMARY PDF GENERATOR
+# ── 6. SUMMARY PDF GENERATOR
 def generate_summary_pdf(data: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        rightMargin=0.75 * inch,
-        leftMargin=0.75 * inch,
-        topMargin=0.75 * inch,
-        bottomMargin=0.75 * inch,
+        buffer, pagesize=letter,
+        rightMargin=0.75 * inch, leftMargin=0.75 * inch,
+        topMargin=0.75 * inch,   bottomMargin=0.75 * inch,
     )
 
     DARK  = colors.HexColor("#1B2A4A")
@@ -217,8 +362,6 @@ def generate_summary_pdf(data: dict) -> bytes:
         return tbl
 
     story = []
-
-    # ── Header info
     story.append(Paragraph("Name Insured", bold_label))
     story.append(Paragraph(data.get("insured", "—"), normal_val))
     story.append(Paragraph("Period of Insurance", bold_label))
@@ -228,7 +371,6 @@ def generate_summary_pdf(data: dict) -> bytes:
     ))
     story.append(Spacer(1, 12))
 
-    # ── GL Coverage Table
     story.append(two_col_table([
         ["Commercial General Liability Coverage", "Limit"],
         ["General Aggregate Limit",               fmt(data.get("gl_aggregate",  "—"))],
@@ -240,7 +382,6 @@ def generate_summary_pdf(data: dict) -> bytes:
     ]))
     story.append(Spacer(1, 14))
 
-    # ── Auto Coverage Table
     story.append(two_col_table([
         ["Business Auto Coverage",        "Limit"],
         ["BI per Person",                 fmt(data.get("auto_bi_person", "—"))],
@@ -251,7 +392,6 @@ def generate_summary_pdf(data: dict) -> bytes:
     ]))
     story.append(Spacer(1, 14))
 
-    # ── GL Premium Summary
     story.append(total_row_table([
         ["General Liability Premium Summary", "Paid in Full"],
         ["Premium",                           fmt(data.get("gl_premium",       "—"), currency=True)],
@@ -262,7 +402,6 @@ def generate_summary_pdf(data: dict) -> bytes:
     ]))
     story.append(Spacer(1, 14))
 
-    # ── Auto Premium Summary
     story.append(total_row_table([
         ["Business Auto Premium Summary", "Paid in Full"],
         ["Annual Premium",                fmt(data.get("auto_premium",     "—"), currency=True)],
@@ -276,17 +415,32 @@ def generate_summary_pdf(data: dict) -> bytes:
     return buffer.getvalue()
 
 
-# ── MAIN APP
-st.title("🛡️ Adventure Shield Proposal Builder")
-st.info("Upload your carrier documents below. The app will automatically reorder them and generate a coverage summary.")
+# ── MAIN APP ─────────────────────────────────────────────────────────────────
 
-files = st.file_uploader("Upload All Quote PDFs", type="pdf", accept_multiple_files=True)
+# Hero Banner
+st.markdown("""
+<div class="hero-banner">
+    <div class="hero-badge">🛡️ vQuip Insurance</div>
+    <div class="hero-title">Adventure Shield</div>
+    <div class="hero-title" style="color: #2E7D8C;">Proposal Builder</div>
+    <div class="hero-subtitle">Upload your carrier documents — we'll sort, reorder, and package them automatically.</div>
+</div>
+""", unsafe_allow_html=True)
+
+# Upload section
+st.markdown('<div class="section-header">📂 Upload Documents</div>', unsafe_allow_html=True)
+files = st.file_uploader(
+    "Drop your quote PDFs here or click to browse",
+    type="pdf",
+    accept_multiple_files=True,
+    label_visibility="collapsed"
+)
 
 if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
 
-    with st.spinner("Analyzing and Reordering Pages..."):
+    with st.spinner("🔍 Analyzing and classifying pages..."):
         for f in files:
             reader = pypdf.PdfReader(f)
             for page in reader.pages:
@@ -295,47 +449,79 @@ if files:
                 buckets[category].append(page)
 
     # Classification summary
-    st.subheader("📋 Classification Summary")
+    st.markdown('<div class="section-header">📋 Document Classification</div>', unsafe_allow_html=True)
+
+    cards_html = '<div class="status-grid">'
+    all_found = True
     for category in MASTER_ORDER:
         count = len(buckets[category])
-        if count == 0:
-            st.warning(f"⚠️ {category}: No pages found")
+        if count > 0:
+            cards_html += f"""
+            <div class="status-card success">
+                <div class="status-icon">✅</div>
+                <div>
+                    <div class="status-label">{category}</div>
+                    <div class="status-count">{count} page{"s" if count != 1 else ""} found</div>
+                </div>
+            </div>"""
         else:
-            st.success(f"✅ {category}: {count} page(s)")
+            all_found = False
+            cards_html += f"""
+            <div class="status-card warning">
+                <div class="status-icon">⚠️</div>
+                <div>
+                    <div class="status-label">{category}</div>
+                    <div class="status-count">No pages found</div>
+                </div>
+            </div>"""
 
     misc_count = len(buckets["Unclassified/Misc"])
     if misc_count > 0:
-        st.error(f"❓ Unclassified/Misc: {misc_count} page(s) — these will be appended at the end")
+        cards_html += f"""
+        <div class="status-card error">
+            <div class="status-icon">❓</div>
+            <div>
+                <div class="status-label">Unclassified / Misc</div>
+                <div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div>
+            </div>
+        </div>"""
 
-    if st.button("🚀 GENERATE ORDERED PACKAGE"):
-        # Build merged PDF
-        writer = pypdf.PdfWriter()
-        for category in MASTER_ORDER:
-            for page in buckets[category]:
+    cards_html += '</div>'
+    st.markdown(cards_html, unsafe_allow_html=True)
+
+    # Generate button
+    st.markdown('<div class="section-header">🚀 Generate Package</div>', unsafe_allow_html=True)
+    if st.button("GENERATE ORDERED PACKAGE + COVERAGE SUMMARY"):
+        with st.spinner("Building your package..."):
+            # Merge PDFs
+            writer = pypdf.PdfWriter()
+            for category in MASTER_ORDER:
+                for page in buckets[category]:
+                    writer.add_page(page)
+            for page in buckets["Unclassified/Misc"]:
                 writer.add_page(page)
-        for page in buckets["Unclassified/Misc"]:
-            writer.add_page(page)
 
-        output_buffer = io.BytesIO()
-        writer.write(output_buffer)
+            output_buffer = io.BytesIO()
+            writer.write(output_buffer)
 
-        # Build coverage summary
-        coverage_data = extract_coverage_data(buckets)
-        summary_pdf_bytes = generate_summary_pdf(coverage_data)
+            # Coverage summary
+            coverage_data = extract_coverage_data(buckets)
+            summary_pdf_bytes = generate_summary_pdf(coverage_data)
 
-        st.success("Package Generated Successfully!")
+        st.success("✅ Package ready — download your files below!")
+        st.markdown('<div class="section-header">💾 Downloads</div>', unsafe_allow_html=True)
 
         col1, col2 = st.columns(2)
         with col1:
             st.download_button(
-                label="💾 DOWNLOAD REORDERED PACKAGE",
+                label="📦 Download Ordered Package",
                 data=output_buffer.getvalue(),
                 file_name="Adventure_Shield_Proposal_Package.pdf",
                 mime="application/pdf"
             )
         with col2:
             st.download_button(
-                label="📄 DOWNLOAD COVERAGE SUMMARY",
+                label="📄 Download Coverage Summary",
                 data=summary_pdf_bytes,
                 file_name="Adventure_Shield_Coverage_Summary.pdf",
                 mime="application/pdf"
