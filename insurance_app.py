@@ -9,10 +9,10 @@ from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-# 1. PAGE CONFIG
+# ── 1. PAGE CONFIG
 st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
 
-# 2. MASTER SEQUENCE
+# ── 2. MASTER SEQUENCE
 MASTER_ORDER = [
     "Surplus Lines Disclosure",
     "Commercial General Liability Quote",
@@ -28,7 +28,7 @@ MASTER_ORDER = [
 ]
 
 
-# 3. CLASSIFICATION
+# ── 3. CLASSIFICATION
 def classify_page(text):
     t = " ".join(text.lower().split())
 
@@ -58,38 +58,69 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# 4. DATA EXTRACTION
+# ── 4. DATA EXTRACTION
 def extract_coverage_data(buckets):
-    def search(pages, *patterns):
-        for page in pages:
-            text = page.extract_text() or ""
-            for pattern in patterns:
-                match = re.search(pattern, text, re.IGNORECASE)
-                if match:
-                    return match.group(1).strip()
-        return "Not Found"
+    def get_text(pages):
+        return "\n".join(p.extract_text() or "" for p in pages)
 
-    gl_pages   = buckets.get("Commercial General Liability Quote", [])
-    auto_pages = buckets.get("Annual Business Auto Quote", [])
-    all_pages  = gl_pages + auto_pages
+    def search(text, *patterns):
+        for pattern in patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+        return "—"
+
+    gl_text   = get_text(buckets.get("Commercial General Liability Quote", []))
+    auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
+    all_text  = gl_text + "\n" + auto_text
 
     return {
-        "insured":        search(all_pages,  r"(?:named insured|insured)[:\s]+([A-Za-z0-9\s,\.&'-]+)"),
-        "effective_date": search(all_pages,  r"(?:effective date|policy period)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})"),
-        "expiry_date":    search(all_pages,  r"(?:expir\w+ date|to)[:\s]+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})"),
-        "gl_carrier":     search(gl_pages,   r"(?:carrier|company|insurer)[:\s]+([A-Za-z\s,\.]+)"),
-        "gl_premium":     search(gl_pages,   r"(?:total premium|annual premium|premium)[:\s]+\$?([\d,]+\.?\d*)"),
-        "gl_occ_limit":   search(gl_pages,   r"(?:each occurrence|per occurrence)[:\s]+\$?([\d,]+)"),
-        "gl_agg_limit":   search(gl_pages,   r"(?:general aggregate)[:\s]+\$?([\d,]+)"),
-        "gl_ded":         search(gl_pages,   r"(?:deductible)[:\s]+\$?([\d,]+)"),
-        "auto_carrier":   search(auto_pages, r"(?:carrier|company|insurer)[:\s]+([A-Za-z\s,\.]+)"),
-        "auto_premium":   search(auto_pages, r"(?:total premium|annual premium|premium)[:\s]+\$?([\d,]+\.?\d*)"),
-        "auto_csl":       search(auto_pages, r"(?:combined single limit|CSL|bodily injury)[:\s]+\$?([\d,]+)"),
-        "auto_ded":       search(auto_pages, r"(?:deductible)[:\s]+\$?([\d,]+)"),
+        # Policy info
+        "insured":           search(all_text,
+                                r"(?:Name(?:d)? Insured|For:)\s*\n?(.+)",
+                                r"Named Insured[:\s]+(.+)"),
+        "effective_date":    search(all_text,
+                                r"Period of Insurance\s+(\d{2}/\d{2}/\d{4})",
+                                r"Policy Term[:\s]+(\w+ \d+,\s*\d{4})"),
+        "expiry_date":       search(all_text,
+                                r"Period of Insurance\s+\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})",
+                                r"Policy Term:.+to\s+(\w+ \d+,\s*\d{4})"),
+
+        # GL limits
+        "gl_carrier":        search(gl_text,  r"Provided by:\s*([^\n\(]+)"),
+        "gl_aggregate":      search(gl_text,  r"General Aggregate(?:\s+Limit)?\s+\$([\d,]+)"),
+        "gl_occurrence":     search(gl_text,  r"Each Occurrence(?:\s+Limit)?\s+\$([\d,]+)"),
+        "gl_products":       search(gl_text,  r"Products.Completed Ops?\s+\$([\d,]+)"),
+        "gl_pi":             search(gl_text,  r"Personal.{0,5}Advertising\s+\$([\d,]+)"),
+        "gl_med_exp":        search(gl_text,  r"Medical Expen\w+\s+\$([\d,]+)"),
+
+        # GL premiums
+        "gl_premium":        search(gl_text,  r"^Premium\s+\$([\d,]+\.\d{2})",
+                                              r"General Liability\s+\$([\d,]+\.\d{2})"),
+        "gl_surplus_tax":    search(gl_text,  r"Surplus Lines Tax\s+\$([\d,]+\.\d{2})"),
+        "gl_stamp_fee":      search(gl_text,  r"Stamping Fee\s+\$([\d,]+\.\d{2})"),
+        "gl_total_premium":  search(gl_text,  r"Total Premium.*?\$([\d,]+\.\d{2})",
+                                              r"TOTAL PREMIUM COST\*?\s+\$([\d,]+\.\d{2})"),
+
+        # Auto limits
+        "auto_carrier":      search(auto_text, r"Carrier\s+([^\n]+)"),
+        "auto_bi_person":    search(auto_text, r"B\.?I\.? per Person\s+\$([\d,]+)",
+                                               r"Bodily Injury Liability per Person\s+\d+\s+\$([\d,]+)"),
+        "auto_bi_acc":       search(auto_text, r"B\.?I\.? per Accident\s+\$([\d,]+)",
+                                               r"Bodily Injury Liability per Accident\s+\d+\s+\$([\d,]+)"),
+        "auto_pd":           search(auto_text, r"Property Damage per Accident\s+\$([\d,]+)",
+                                               r"Property Damage Liability per Accident\s+\d+\s+\$([\d,]+)"),
+
+        # Auto premiums
+        "auto_premium":      search(auto_text, r"Annual Premium\s+\$([\d,]+\.\d{2})"),
+        "auto_surplus_tax":  search(auto_text, r"Surplus Lines Tax\s+\$([\d,]+\.\d{2})"),
+        "auto_stamp_fee":    search(auto_text, r"Stamping Fee\s+\$([\d,]+\.\d{2})"),
+        "auto_total_premium":search(auto_text, r"^Total\s+\$([\d,]+\.\d{2})",
+                                               r"Total\s+\$([\d,]+\.\d{2})"),
     }
 
 
-# 5. SUMMARY PDF GENERATOR
+# ── 5. SUMMARY PDF GENERATOR
 def generate_summary_pdf(data: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -101,109 +132,128 @@ def generate_summary_pdf(data: dict) -> bytes:
         bottomMargin=0.75 * inch,
     )
 
-    styles = getSampleStyleSheet()
-    NAVY  = colors.HexColor("#1B2A4A")
-    GOLD  = colors.HexColor("#C9A84C")
-    LIGHT = colors.HexColor("#F4F6FA")
+    DARK  = colors.HexColor("#1B2A4A")
+    TEAL  = colors.HexColor("#2E7D8C")
+    LIGHT = colors.HexColor("#F9F9F9")
+    WHITE = colors.white
+    BLACK = colors.HexColor("#222222")
 
-    title_style   = ParagraphStyle("title",   fontSize=22, textColor=NAVY,
-                                   alignment=TA_CENTER, fontName="Helvetica-Bold", spaceAfter=4)
-    sub_style     = ParagraphStyle("sub",     fontSize=11, textColor=GOLD,
-                                   alignment=TA_CENTER, fontName="Helvetica-Bold", spaceAfter=2)
-    label_style   = ParagraphStyle("label",   fontSize=9,  textColor=colors.grey,
-                                   fontName="Helvetica", leading=14)
-    value_style   = ParagraphStyle("value",   fontSize=11, textColor=NAVY,
-                                   fontName="Helvetica-Bold", leading=14)
-    section_style = ParagraphStyle("section", fontSize=13, textColor=colors.white,
-                                   fontName="Helvetica-Bold", alignment=TA_CENTER)
-    footer_style  = ParagraphStyle("footer",  fontSize=8,  textColor=colors.grey,
-                                   alignment=TA_CENTER)
+    bold_label = ParagraphStyle("bold_label", fontSize=10, fontName="Helvetica-Bold",
+                                textColor=BLACK, spaceAfter=1)
+    normal_val = ParagraphStyle("normal_val", fontSize=10, fontName="Helvetica",
+                                textColor=BLACK, spaceAfter=6)
 
     def fmt_currency(val):
+        if not val or val == "—":
+            return "—"
         try:
-            return f"${int(val.replace(',', '')):,}"
+            return f"${float(val.replace(',', '').replace('$', '')):,.2f}"
         except:
-            return val if val != "Not Found" else "—"
+            return val
 
-    def info_row(label, value):
-        return [Paragraph(label, label_style), Paragraph(value or "—", value_style)]
+    def two_col_table(rows, col_widths):
+        style_cmds = [
+            ("BACKGROUND",    (0, 0), (-1, 0),  DARK),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  WHITE),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, 0),  10),
+            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
+            ("GRID",          (0, 0), (-1, -1), 0.25, colors.lightgrey),
+            ("ALIGN",         (1, 0), (1, -1),  "RIGHT"),
+        ]
+        for i in range(1, len(rows)):
+            bg = LIGHT if i % 2 == 1 else WHITE
+            style_cmds.append(("BACKGROUND", (0, i), (-1, i), bg))
 
-    def coverage_section(title, rows):
-        header = Table([[Paragraph(title, section_style)]], colWidths=[7 * inch])
-        header.setStyle(TableStyle([
-            ("BACKGROUND",    (0, 0), (-1, -1), NAVY),
-            ("TOPPADDING",    (0, 0), (-1, -1), 8),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-        ]))
-        story.append(header)
+        tbl = Table(rows, colWidths=col_widths)
+        tbl.setStyle(TableStyle(style_cmds))
+        return tbl
 
-        tbl = Table(rows, colWidths=[2.2 * inch, 4.8 * inch])
-        tbl.setStyle(TableStyle([
-            ("ROWBACKGROUNDS",  (0, 0), (-1, -1), [LIGHT, colors.white]),
-            ("LEFTPADDING",     (0, 0), (-1, -1), 10),
-            ("RIGHTPADDING",    (0, 0), (-1, -1), 10),
-            ("TOPPADDING",      (0, 0), (-1, -1), 7),
-            ("BOTTOMPADDING",   (0, 0), (-1, -1), 7),
-            ("GRID",            (0, 0), (-1, -1), 0.25, colors.lightgrey),
-        ]))
-        story.append(tbl)
-        story.append(Spacer(1, 14))
+    def total_row_table(rows, col_widths):
+        style_cmds = [
+            ("BACKGROUND",    (0, 0),  (-1, 0),  DARK),
+            ("TEXTCOLOR",     (0, 0),  (-1, 0),  WHITE),
+            ("FONTNAME",      (0, 0),  (-1, 0),  "Helvetica-Bold"),
+            ("BACKGROUND",    (0, -1), (-1, -1), TEAL),
+            ("TEXTCOLOR",     (0, -1), (-1, -1), WHITE),
+            ("FONTNAME",      (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("TOPPADDING",    (0, 0),  (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0),  (-1, -1), 6),
+            ("LEFTPADDING",   (0, 0),  (-1, -1), 8),
+            ("RIGHTPADDING",  (0, 0),  (-1, -1), 8),
+            ("GRID",          (0, 0),  (-1, -1), 0.25, colors.lightgrey),
+            ("ALIGN",         (1, 0),  (1, -1),  "RIGHT"),
+        ]
+        for i in range(1, len(rows) - 1):
+            bg = LIGHT if i % 2 == 1 else WHITE
+            style_cmds.append(("BACKGROUND", (0, i), (-1, i), bg))
 
+        tbl = Table(rows, colWidths=col_widths)
+        tbl.setStyle(TableStyle(style_cmds))
+        return tbl
+
+    CW    = [4.5 * inch, 2.5 * inch]
     story = []
 
-    # Header
-    story.append(Paragraph("Adventure Shield", title_style))
-    story.append(Paragraph("COVERAGE SUMMARY", sub_style))
-    story.append(HRFlowable(width="100%", thickness=2, color=GOLD, spaceAfter=10))
-
-    # Client Info
-    client_data = [
-        info_row("NAMED INSURED",   data["insured"]),
-        info_row("EFFECTIVE DATE",  data["effective_date"]),
-        info_row("EXPIRATION DATE", data["expiry_date"]),
-    ]
-    client_table = Table(client_data, colWidths=[2.2 * inch, 4.8 * inch])
-    client_table.setStyle(TableStyle([
-        ("ROWBACKGROUNDS",  (0, 0), (-1, -1), [LIGHT, colors.white]),
-        ("LEFTPADDING",     (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING",    (0, 0), (-1, -1), 10),
-        ("TOPPADDING",      (0, 0), (-1, -1), 7),
-        ("BOTTOMPADDING",   (0, 0), (-1, -1), 7),
-        ("GRID",            (0, 0), (-1, -1), 0.25, colors.lightgrey),
-    ]))
-    story.append(client_table)
-    story.append(Spacer(1, 16))
-
-    # General Liability
-    coverage_section("COMMERCIAL GENERAL LIABILITY", [
-        info_row("CARRIER",           data["gl_carrier"]),
-        info_row("ANNUAL PREMIUM",    fmt_currency(data["gl_premium"])),
-        info_row("EACH OCCURRENCE",   fmt_currency(data["gl_occ_limit"])),
-        info_row("GENERAL AGGREGATE", fmt_currency(data["gl_agg_limit"])),
-        info_row("DEDUCTIBLE",        fmt_currency(data["gl_ded"])),
-    ])
-
-    # Business Auto
-    coverage_section("ANNUAL BUSINESS AUTO", [
-        info_row("CARRIER",               data["auto_carrier"]),
-        info_row("ANNUAL PREMIUM",        fmt_currency(data["auto_premium"])),
-        info_row("COMBINED SINGLE LIMIT", fmt_currency(data["auto_csl"])),
-        info_row("DEDUCTIBLE",            fmt_currency(data["auto_ded"])),
-    ])
-
-    # Footer
-    story.append(HRFlowable(width="100%", thickness=1, color=GOLD, spaceAfter=6))
+    # ── Named Insured / Policy Info
+    story.append(Paragraph("Name Insured", bold_label))
+    story.append(Paragraph(data.get("insured", "—"), normal_val))
+    story.append(Paragraph("Period of Insurance", bold_label))
     story.append(Paragraph(
-        "This summary is for proposal purposes only and does not constitute a binder or policy.",
-        footer_style
+        f"{data.get('effective_date', '—')} to {data.get('expiry_date', '—')}",
+        normal_val
     ))
+    story.append(Spacer(1, 12))
+
+    # ── GL Coverage Table
+    story.append(two_col_table([
+        ["Commercial General Liability Coverage", "Limit"],
+        ["General Aggregate Limit",               f"${data.get('gl_aggregate',  '—')}"],
+        ["Each Occurrence Limit",                 f"${data.get('gl_occurrence', '—')}"],
+        ["Products-Completed Ops",                f"${data.get('gl_products',   '—')}"],
+        ["Personal/Advertising",                  f"${data.get('gl_pi',         '—')}"],
+        ["Medical Expense",                       f"${data.get('gl_med_exp',    '—')}"],
+    ], CW))
+    story.append(Spacer(1, 14))
+
+    # ── Auto Coverage Table
+    story.append(two_col_table([
+        ["Business Auto Coverage",        "Limit"],
+        ["BI per Person",                 f"${data.get('auto_bi_person', '—')}"],
+        ["BI per Accident",               f"${data.get('auto_bi_acc',    '—')}"],
+        ["Property Damage per Accident",  f"${data.get('auto_pd',        '—')}"],
+        ["Collision",                     "Excluded"],
+        ["Comprehensive",                 "Excluded"],
+    ], CW))
+    story.append(Spacer(1, 14))
+
+    # ── GL Premium Summary
+    story.append(total_row_table([
+        ["General Liability Premium Summary",  "Paid in Full"],
+        ["Premium",                            fmt_currency(data.get("gl_premium",       "—"))],
+        ["Surplus Lines Tax",                  fmt_currency(data.get("gl_surplus_tax",   "—"))],
+        ["Stamping Fee",                       fmt_currency(data.get("gl_stamp_fee",     "—"))],
+        ["Total Premium & Taxes / Fees",       fmt_currency(data.get("gl_total_premium", "—"))],
+    ], CW))
+    story.append(Spacer(1, 14))
+
+    # ── Auto Premium Summary
+    story.append(total_row_table([
+        ["Business Auto Premium Summary",  "Paid in Full"],
+        ["Annual Premium",                 fmt_currency(data.get("auto_premium",       "—"))],
+        ["Surplus Lines Tax",              fmt_currency(data.get("auto_surplus_tax",   "—"))],
+        ["Stamping Fee",                   fmt_currency(data.get("auto_stamp_fee",     "—"))],
+        ["Total",                          fmt_currency(data.get("auto_total_premium", "—"))],
+    ], CW))
 
     doc.build(story)
     return buffer.getvalue()
 
 
-# ── MAIN APP ─────────────────────────────────────────────────────────────────
-
+# ── MAIN APP
 st.title("🛡️ Adventure Shield Proposal Builder")
 st.info("Upload your carrier documents below. The app will automatically reorder them and generate a coverage summary.")
 
