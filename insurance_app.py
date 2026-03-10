@@ -50,9 +50,9 @@ def classify_page(text):
         return "Annual Business Auto Forms & Endorsements"
     if "forms" in t and "endorsements" in t:
         return "Commercial General Liability Forms & Endorsements"
-    if "annual business auto" in t and "quote" in t:
+    if "annual business auto" in t and "quote" not in t and "forms" not in t:
         return "Annual Business Auto Quote"
-    if "commercial general liability" in t and "limit" in t:
+    if "commercial general liability" in t and "forms" not in t and "terrorism" not in t:
         return "Commercial General Liability Quote"
 
     return "Unclassified/Misc"
@@ -65,7 +65,7 @@ def extract_coverage_data(buckets):
 
     def search(text, *patterns):
         for pattern in patterns:
-            match = re.search(pattern, text, re.IGNORECASE)
+            match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
                 return match.group(1).strip()
         return "—"
@@ -75,48 +75,68 @@ def extract_coverage_data(buckets):
     all_text  = gl_text + "\n" + auto_text
 
     return {
-        # Policy info
+        # Policy info — from "Name Insured   Hurricane Enduro Rentals, LLC"
         "insured":           search(all_text,
-                                r"(?:Name(?:d)? Insured|For:)\s*\n?(.+)",
-                                r"Named Insured[:\s]+(.+)"),
+                                r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
+                                r"Name(?:d)? Insured\s*\n([^\n]+)"),
         "effective_date":    search(all_text,
-                                r"Period of Insurance\s+(\d{2}/\d{2}/\d{4})",
-                                r"Policy Term[:\s]+(\w+ \d+,\s*\d{4})"),
+                                r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
         "expiry_date":       search(all_text,
-                                r"Period of Insurance\s+\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})",
-                                r"Policy Term:.+to\s+(\w+ \d+,\s*\d{4})"),
+                                r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
 
-        # GL limits
-        "gl_carrier":        search(gl_text,  r"Provided by:\s*([^\n\(]+)"),
-        "gl_aggregate":      search(gl_text,  r"General Aggregate(?:\s+Limit)?\s+\$([\d,]+)"),
-        "gl_occurrence":     search(gl_text,  r"Each Occurrence(?:\s+Limit)?\s+\$([\d,]+)"),
-        "gl_products":       search(gl_text,  r"Products.Completed Ops?\s+\$([\d,]+)"),
-        "gl_pi":             search(gl_text,  r"Personal.{0,5}Advertising\s+\$([\d,]+)"),
-        "gl_med_exp":        search(gl_text,  r"Medical Expen\w+\s+\$([\d,]+)"),
+        # GL carrier — "Carrier   Benchmark Insurance Company"
+        "gl_carrier":        search(gl_text,
+                                r"Carrier\s+([^\n]+)"),
 
-        # GL premiums
-        "gl_premium":        search(gl_text,  r"^Premium\s+\$([\d,]+\.\d{2})",
-                                              r"General Liability\s+\$([\d,]+\.\d{2})"),
-        "gl_surplus_tax":    search(gl_text,  r"Surplus Lines Tax\s+\$([\d,]+\.\d{2})"),
-        "gl_stamp_fee":      search(gl_text,  r"Stamping Fee\s+\$([\d,]+\.\d{2})"),
-        "gl_total_premium":  search(gl_text,  r"Total Premium.*?\$([\d,]+\.\d{2})",
-                                              r"TOTAL PREMIUM COST\*?\s+\$([\d,]+\.\d{2})"),
+        # GL limits — "General Aggregate Limit\n(Other than...): $2,000,000"
+        "gl_aggregate":      search(gl_text,
+                                r"General Aggregate Limit[^$]*\$([0-9,]+)"),
+        "gl_occurrence":     search(gl_text,
+                                r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
+        "gl_products":       search(gl_text,
+                                r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
+        "gl_pi":             search(gl_text,
+                                r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
+        "gl_premises":       search(gl_text,
+                                r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
+        "gl_med_exp":        search(gl_text,
+                                r"Medical Expense Limit\s+\$([0-9,]+)"),
 
-        # Auto limits
-        "auto_carrier":      search(auto_text, r"Carrier\s+([^\n]+)"),
-        "auto_bi_person":    search(auto_text, r"B\.?I\.? per Person\s+\$([\d,]+)",
-                                               r"Bodily Injury Liability per Person\s+\d+\s+\$([\d,]+)"),
-        "auto_bi_acc":       search(auto_text, r"B\.?I\.? per Accident\s+\$([\d,]+)",
-                                               r"Bodily Injury Liability per Accident\s+\d+\s+\$([\d,]+)"),
-        "auto_pd":           search(auto_text, r"Property Damage per Accident\s+\$([\d,]+)",
-                                               r"Property Damage Liability per Accident\s+\d+\s+\$([\d,]+)"),
+        # GL premiums — paid-in-full column is first number after label
+        "gl_premium":        search(gl_text,
+                                r"^Premium\s+\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":    search(gl_text,
+                                r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":      search(gl_text,
+                                r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":   search(gl_text,
+                                r"vQuip Platform Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":  search(gl_text,
+                                r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
 
-        # Auto premiums
-        "auto_premium":      search(auto_text, r"Annual Premium\s+\$([\d,]+\.\d{2})"),
-        "auto_surplus_tax":  search(auto_text, r"Surplus Lines Tax\s+\$([\d,]+\.\d{2})"),
-        "auto_stamp_fee":    search(auto_text, r"Stamping Fee\s+\$([\d,]+\.\d{2})"),
-        "auto_total_premium":search(auto_text, r"^Total\s+\$([\d,]+\.\d{2})",
-                                               r"Total\s+\$([\d,]+\.\d{2})"),
+        # Auto carrier
+        "auto_carrier":      search(auto_text,
+                                r"Carrier\s+([^\n]+)"),
+
+        # Auto limits — "Bodily Injury Liability per Person   7   $30,000"
+        "auto_bi_person":    search(auto_text,
+                                r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
+        "auto_bi_acc":       search(auto_text,
+                                r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_pd":           search(auto_text,
+                                r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+
+        # Auto premiums — paid-in-full column is first number after label
+        "auto_premium":      search(auto_text,
+                                r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":  search(auto_text,
+                                r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":    search(auto_text,
+                                r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_tech_fee":     search(auto_text,
+                                r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
+        "auto_total":        search(auto_text,
+                                r"^Total\s+\$([0-9,]+\.\d{2})"),
     }
 
 
@@ -143,20 +163,23 @@ def generate_summary_pdf(data: dict) -> bytes:
     normal_val = ParagraphStyle("normal_val", fontSize=10, fontName="Helvetica",
                                 textColor=BLACK, spaceAfter=6)
 
-    def fmt_currency(val):
+    def fmt(val, currency=False):
         if not val or val == "—":
             return "—"
-        try:
-            return f"${float(val.replace(',', '').replace('$', '')):,.2f}"
-        except:
-            return val
+        if currency:
+            try:
+                return f"${float(val.replace(',', '').replace('$', '')):,.2f}"
+            except:
+                return val
+        return f"${val}" if not val.startswith("$") else val
 
-    def two_col_table(rows, col_widths):
+    def two_col_table(rows):
+        CW = [4.5 * inch, 2.5 * inch]
         style_cmds = [
             ("BACKGROUND",    (0, 0), (-1, 0),  DARK),
             ("TEXTCOLOR",     (0, 0), (-1, 0),  WHITE),
             ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",      (0, 0), (-1, 0),  10),
+            ("FONTSIZE",      (0, 0), (-1, -1), 9),
             ("TOPPADDING",    (0, 0), (-1, -1), 6),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
             ("LEFTPADDING",   (0, 0), (-1, -1), 8),
@@ -165,14 +188,13 @@ def generate_summary_pdf(data: dict) -> bytes:
             ("ALIGN",         (1, 0), (1, -1),  "RIGHT"),
         ]
         for i in range(1, len(rows)):
-            bg = LIGHT if i % 2 == 1 else WHITE
-            style_cmds.append(("BACKGROUND", (0, i), (-1, i), bg))
-
-        tbl = Table(rows, colWidths=col_widths)
+            style_cmds.append(("BACKGROUND", (0, i), (-1, i), LIGHT if i % 2 == 1 else WHITE))
+        tbl = Table(rows, colWidths=CW)
         tbl.setStyle(TableStyle(style_cmds))
         return tbl
 
-    def total_row_table(rows, col_widths):
+    def total_row_table(rows):
+        CW = [4.5 * inch, 2.5 * inch]
         style_cmds = [
             ("BACKGROUND",    (0, 0),  (-1, 0),  DARK),
             ("TEXTCOLOR",     (0, 0),  (-1, 0),  WHITE),
@@ -180,6 +202,7 @@ def generate_summary_pdf(data: dict) -> bytes:
             ("BACKGROUND",    (0, -1), (-1, -1), TEAL),
             ("TEXTCOLOR",     (0, -1), (-1, -1), WHITE),
             ("FONTNAME",      (0, -1), (-1, -1), "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0),  (-1, -1), 9),
             ("TOPPADDING",    (0, 0),  (-1, -1), 6),
             ("BOTTOMPADDING", (0, 0),  (-1, -1), 6),
             ("LEFTPADDING",   (0, 0),  (-1, -1), 8),
@@ -188,17 +211,14 @@ def generate_summary_pdf(data: dict) -> bytes:
             ("ALIGN",         (1, 0),  (1, -1),  "RIGHT"),
         ]
         for i in range(1, len(rows) - 1):
-            bg = LIGHT if i % 2 == 1 else WHITE
-            style_cmds.append(("BACKGROUND", (0, i), (-1, i), bg))
-
-        tbl = Table(rows, colWidths=col_widths)
+            style_cmds.append(("BACKGROUND", (0, i), (-1, i), LIGHT if i % 2 == 1 else WHITE))
+        tbl = Table(rows, colWidths=CW)
         tbl.setStyle(TableStyle(style_cmds))
         return tbl
 
-    CW    = [4.5 * inch, 2.5 * inch]
     story = []
 
-    # ── Named Insured / Policy Info
+    # ── Header info
     story.append(Paragraph("Name Insured", bold_label))
     story.append(Paragraph(data.get("insured", "—"), normal_val))
     story.append(Paragraph("Period of Insurance", bold_label))
@@ -210,44 +230,47 @@ def generate_summary_pdf(data: dict) -> bytes:
 
     # ── GL Coverage Table
     story.append(two_col_table([
-        ["Commercial General Liability Coverage", "Limit"],
-        ["General Aggregate Limit",               f"${data.get('gl_aggregate',  '—')}"],
-        ["Each Occurrence Limit",                 f"${data.get('gl_occurrence', '—')}"],
-        ["Products-Completed Ops",                f"${data.get('gl_products',   '—')}"],
-        ["Personal/Advertising",                  f"${data.get('gl_pi',         '—')}"],
-        ["Medical Expense",                       f"${data.get('gl_med_exp',    '—')}"],
-    ], CW))
+        ["Commercial General Liability Coverage",    "Limit"],
+        ["General Aggregate Limit",                  fmt(data.get("gl_aggregate",  "—"))],
+        ["Each Occurrence Limit",                    fmt(data.get("gl_occurrence", "—"))],
+        ["Products-Completed Operations",            fmt(data.get("gl_products",   "—"))],
+        ["Personal/Advertising Injury",              fmt(data.get("gl_pi",         "—"))],
+        ["Damage to Premises Rented",                fmt(data.get("gl_premises",   "—"))],
+        ["Medical Expense",                          fmt(data.get("gl_med_exp",    "—"))],
+    ]))
     story.append(Spacer(1, 14))
 
     # ── Auto Coverage Table
     story.append(two_col_table([
-        ["Business Auto Coverage",        "Limit"],
-        ["BI per Person",                 f"${data.get('auto_bi_person', '—')}"],
-        ["BI per Accident",               f"${data.get('auto_bi_acc',    '—')}"],
-        ["Property Damage per Accident",  f"${data.get('auto_pd',        '—')}"],
-        ["Collision",                     "Excluded"],
-        ["Comprehensive",                 "Excluded"],
-    ], CW))
+        ["Business Auto Coverage",            "Limit"],
+        ["BI per Person",                     fmt(data.get("auto_bi_person", "—"))],
+        ["BI per Accident",                   fmt(data.get("auto_bi_acc",    "—"))],
+        ["Property Damage per Accident",      fmt(data.get("auto_pd",        "—"))],
+        ["Collision",                         "Excluded"],
+        ["Comprehensive",                     "Excluded"],
+    ]))
     story.append(Spacer(1, 14))
 
     # ── GL Premium Summary
     story.append(total_row_table([
         ["General Liability Premium Summary",  "Paid in Full"],
-        ["Premium",                            fmt_currency(data.get("gl_premium",       "—"))],
-        ["Surplus Lines Tax",                  fmt_currency(data.get("gl_surplus_tax",   "—"))],
-        ["Stamping Fee",                       fmt_currency(data.get("gl_stamp_fee",     "—"))],
-        ["Total Premium & Taxes / Fees",       fmt_currency(data.get("gl_total_premium", "—"))],
-    ], CW))
+        ["Premium",                            fmt(data.get("gl_premium",      "—"), currency=True)],
+        ["Surplus Lines Tax",                  fmt(data.get("gl_surplus_tax",  "—"), currency=True)],
+        ["Stamping Fee",                       fmt(data.get("gl_stamp_fee",    "—"), currency=True)],
+        ["vQuip Platform Fee",                 fmt(data.get("gl_platform_fee", "—"), currency=True)],
+        ["Total Premium & Taxes / Fees",       fmt(data.get("gl_total_premium","—"), currency=True)],
+    ]))
     story.append(Spacer(1, 14))
 
     # ── Auto Premium Summary
     story.append(total_row_table([
         ["Business Auto Premium Summary",  "Paid in Full"],
-        ["Annual Premium",                 fmt_currency(data.get("auto_premium",       "—"))],
-        ["Surplus Lines Tax",              fmt_currency(data.get("auto_surplus_tax",   "—"))],
-        ["Stamping Fee",                   fmt_currency(data.get("auto_stamp_fee",     "—"))],
-        ["Total",                          fmt_currency(data.get("auto_total_premium", "—"))],
-    ], CW))
+        ["Annual Premium",                 fmt(data.get("auto_premium",     "—"), currency=True)],
+        ["Surplus Lines Tax",              fmt(data.get("auto_surplus_tax", "—"), currency=True)],
+        ["Stamping Fee",                   fmt(data.get("auto_stamp_fee",   "—"), currency=True)],
+        ["Technology Transaction Fee",     fmt(data.get("auto_tech_fee",    "—"), currency=True)],
+        ["Total",                          fmt(data.get("auto_total",       "—"), currency=True)],
+    ]))
 
     doc.build(story)
     return buffer.getvalue()
@@ -296,7 +319,7 @@ if files:
         output_buffer = io.BytesIO()
         writer.write(output_buffer)
 
-        # Build coverage summary PDF
+        # Build coverage summary
         coverage_data = extract_coverage_data(buckets)
         summary_pdf_bytes = generate_summary_pdf(coverage_data)
 
