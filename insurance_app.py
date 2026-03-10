@@ -6,11 +6,11 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # ── 1. PAGE CONFIG
-st.set_page_config(page_title="Adventure Shield Proposal Builder", page_icon="🛡️", layout="wide")
+st.set_page_config(page_title="AdventureShield Proposal Builder", page_icon="🛡️", layout="wide")
 
 # ── 2. CUSTOM CSS
 st.markdown("""
@@ -18,45 +18,30 @@ st.markdown("""
     [data-testid="stAppViewContainer"] { background-color: #0F1923; }
     [data-testid="stSidebar"] { background-color: #0F1923; }
     section[data-testid="stMain"] { background-color: #0F1923; }
-
     .hero-banner {
         background: linear-gradient(135deg, #1B2A4A 0%, #2E7D8C 100%);
-        border-radius: 16px;
-        padding: 40px 48px;
-        margin-bottom: 32px;
-        border: 1px solid #2E7D8C;
+        border-radius: 16px; padding: 40px 48px; margin-bottom: 32px; border: 1px solid #2E7D8C;
     }
     .hero-title { font-size: 42px; font-weight: 800; color: #FFFFFF; letter-spacing: -1px; margin: 0; line-height: 1.1; }
     .hero-subtitle { font-size: 16px; color: #A8C4C8; margin-top: 8px; font-weight: 400; }
     .hero-badge { display: inline-block; background: rgba(255,255,255,0.15); color: #FFFFFF; font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; padding: 4px 12px; border-radius: 20px; margin-bottom: 16px; }
-
     [data-testid="stFileUploader"] { background: #1A2535; border: 2px dashed #2E7D8C; border-radius: 12px; padding: 12px; }
     [data-testid="stFileUploader"]:hover { border-color: #C9A84C; }
-    [data-testid="stAlert"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; color: #A8C4C8 !important; }
-
     .section-header { font-size: 11px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: #2E7D8C; margin: 32px 0 16px 0; }
-
     .status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; margin-bottom: 24px; }
     .status-card { background: #1A2535; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; border: 1px solid #263548; }
     .status-card.success { border-left: 3px solid #2E7D8C; }
     .status-card.warning { border-left: 3px solid #C9A84C; opacity: 0.6; }
-    .status-card.error { border-left: 3px solid #E05555; }
-    .status-icon { font-size: 18px; min-width: 24px; }
+    .status-card.error   { border-left: 3px solid #E05555; }
+    .status-icon  { font-size: 18px; min-width: 24px; }
     .status-label { font-size: 13px; font-weight: 600; color: #FFFFFF; }
     .status-count { font-size: 12px; color: #6B8A9A; margin-top: 2px; }
-
     [data-testid="stButton"] > button { background: linear-gradient(135deg, #2E7D8C, #1B5E6E) !important; color: white !important; font-weight: 700 !important; font-size: 15px !important; letter-spacing: 1px !important; border: none !important; border-radius: 10px !important; padding: 14px 32px !important; width: 100% !important; }
-    [data-testid="stButton"] > button:hover { background: linear-gradient(135deg, #C9A84C, #A8872E) !important; transform: translateY(-1px) !important; }
-
+    [data-testid="stButton"] > button:hover { background: linear-gradient(135deg, #C9A84C, #A8872E) !important; }
     [data-testid="stDownloadButton"] > button { background: #1A2535 !important; color: #FFFFFF !important; font-weight: 600 !important; font-size: 14px !important; border: 2px solid #2E7D8C !important; border-radius: 10px !important; padding: 12px 24px !important; width: 100% !important; }
-    [data-testid="stDownloadButton"] > button:hover { background: #2E7D8C !important; border-color: #2E7D8C !important; transform: translateY(-1px) !important; }
-
+    [data-testid="stDownloadButton"] > button:hover { background: #2E7D8C !important; }
     [data-testid="stSuccess"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; }
-
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
     p, li, span, label { color: #A8C4C8; }
     h1, h2, h3 { color: #FFFFFF; }
 </style>
@@ -81,24 +66,15 @@ MASTER_ORDER = [
 # ── 4. CLASSIFICATION
 def classify_page(text):
     t = " ".join(text.lower().split())
-    if "surplus lines" in t and "disclosure" in t:
-        return "Surplus Lines Disclosure"
-    if "terrorism" in t and "coverage offering" in t:
-        return "Notice of Terrorism Coverage Offering"
-    if "small print" in t:
-        return "The Small Print"
-    if "overall program binding" in t:
-        return "Overall Program Binding"
-    if "transfer risk" in t:
-        return "Why its important to transfer risk and cost"
-    if "how does it work" in t:
-        return "OK so how does it work"
-    if "blanket accident" in t and "details" in t:
-        return "Blanket Accident - Full Details"
-    if "forms" in t and "endorsements" in t and "auto" in t:
-        return "Annual Business Auto Forms & Endorsements"
-    if "forms" in t and "endorsements" in t:
-        return "Commercial General Liability Forms & Endorsements"
+    if "surplus lines" in t and "disclosure" in t:              return "Surplus Lines Disclosure"
+    if "terrorism" in t and "coverage offering" in t:           return "Notice of Terrorism Coverage Offering"
+    if "small print" in t:                                       return "The Small Print"
+    if "overall program binding" in t:                           return "Overall Program Binding"
+    if "transfer risk" in t:                                     return "Why its important to transfer risk and cost"
+    if "how does it work" in t:                                  return "OK so how does it work"
+    if "blanket accident" in t and "details" in t:               return "Blanket Accident - Full Details"
+    if "forms" in t and "endorsements" in t and "auto" in t:     return "Annual Business Auto Forms & Endorsements"
+    if "forms" in t and "endorsements" in t:                     return "Commercial General Liability Forms & Endorsements"
     if "annual business auto" in t and "forms" not in t and "endorsements" not in t:
         return "Annual Business Auto Quote"
     if "commercial general liability" in t and "forms" not in t and "terrorism" not in t:
@@ -156,8 +132,8 @@ def generate_summary_pdf(data: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
-        rightMargin=0.55 * inch, leftMargin=0.55 * inch,
-        topMargin=0.45 * inch,   bottomMargin=0.45 * inch,
+        rightMargin=0.5*inch, leftMargin=0.5*inch,
+        topMargin=0.45*inch,  bottomMargin=0.45*inch,
     )
 
     DARK  = colors.HexColor("#1B2A4A")
@@ -169,169 +145,158 @@ def generate_summary_pdf(data: dict) -> bytes:
     GREY  = colors.HexColor("#888888")
 
     def parse_float(val):
-        try:
-            return float(val.replace(',', '').replace('$', ''))
-        except:
-            return 0.0
+        try:    return float(str(val).replace(',','').replace('$',''))
+        except: return 0.0
 
     def fmt(val, currency=False):
-        if not val or val == "—":
-            return "—"
+        if not val or val == "—": return "—"
         if currency:
-            try:
-                return f"${float(val.replace(',', '').replace('$', '')):,.2f}"
-            except:
-                return val
-        return f"${val}" if not val.startswith("$") else val
+            try:    return f"${float(str(val).replace(',','').replace('$','')):,.2f}"
+            except: return str(val)
+        v = str(val)
+        return f"${v}" if not v.startswith("$") else v
 
-    # Grand total
-    gl_total_val    = parse_float(data.get("gl_total_premium", "0"))
-    auto_total_val  = parse_float(data.get("auto_total", "0"))
-    grand_total     = gl_total_val + auto_total_val
+    grand_total     = parse_float(data.get("gl_total_premium","0")) + parse_float(data.get("auto_total","0"))
     grand_total_fmt = f"${grand_total:,.2f}" if grand_total > 0 else "—"
 
-    # Shared column widths for all tables: label | value
-    CW = [3.55 * inch, 1.35 * inch]
+    PW    = 7.5 * inch
+    GAP   = 0.1 * inch
+    PANEL = (PW - GAP) / 2
+    L_COL = PANEL * 0.62
+    V_COL = PANEL * 0.38
 
-    # ── Style helpers
-    def cell(text, bold=False, align="LEFT", color=BLACK, size=8):
-        style = ParagraphStyle("c",
+    def p(text, bold=False, size=8, color=BLACK, align=TA_LEFT):
+        return Paragraph(str(text), ParagraphStyle("_",
             fontName="Helvetica-Bold" if bold else "Helvetica",
-            fontSize=size, textColor=color,
-            alignment={"LEFT": 0, "CENTER": 1, "RIGHT": 2}.get(align, 0),
-            leading=10)
-        return Paragraph(str(text), style)
+            fontSize=size, textColor=color, alignment=align, leading=size+3))
 
-    def make_table(rows, total_row=False):
-        """rows[0] is always the dark header. If total_row=True, last row is teal."""
-        style_cmds = [
-            ("BACKGROUND",    (0, 0), (-1, 0),  DARK),
-            ("TEXTCOLOR",     (0, 0), (-1, 0),  WHITE),
-            ("FONTSIZE",      (0, 0), (-1, -1), 8),
-            ("TOPPADDING",    (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ("LEFTPADDING",   (0, 0), (-1, -1), 8),
-            ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
-            ("GRID",          (0, 0), (-1, -1), 0.25, colors.lightgrey),
-            ("ALIGN",         (1, 0), (1, -1),  "RIGHT"),
+    def build_table(rows, total_row=False):
+        cmds = [
+            ("BACKGROUND",    (0,0), (-1,0),  DARK),
+            ("TOPPADDING",    (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+            ("LEFTPADDING",   (0,0), (-1,-1), 7),
+            ("RIGHTPADDING",  (0,0), (-1,-1), 7),
+            ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#CCCCCC")),
+            ("ALIGN",         (1,0), (1,-1),  "RIGHT"),
+            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
         ]
         if total_row:
-            style_cmds += [
-                ("BACKGROUND", (0, -1), (-1, -1), TEAL),
-                ("TEXTCOLOR",  (0, -1), (-1, -1), WHITE),
-                ("FONTNAME",   (0, -1), (-1, -1), "Helvetica-Bold"),
+            cmds += [
+                ("BACKGROUND", (0,-1), (-1,-1), TEAL),
             ]
         for i in range(1, len(rows) - (1 if total_row else 0)):
-            style_cmds.append(("BACKGROUND", (0, i), (-1, i), LIGHT if i % 2 == 1 else WHITE))
-        tbl = Table(rows, colWidths=CW)
-        tbl.setStyle(TableStyle(style_cmds))
+            cmds.append(("BACKGROUND", (0,i), (-1,i), LIGHT if i%2==1 else WHITE))
+        tbl = Table(rows, colWidths=[L_COL, V_COL])
+        tbl.setStyle(TableStyle(cmds))
         return tbl
 
-    def side_by_side(left_tbl, right_tbl):
-        tbl = Table([[left_tbl, right_tbl]], colWidths=[3.95 * inch, 3.95 * inch])
+    def side_by_side(left, right):
+        tbl = Table([[left, right]], colWidths=[PANEL, PANEL])
         tbl.setStyle(TableStyle([
-            ("LEFTPADDING",  (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ("TOPPADDING",   (0, 0), (-1, -1), 0),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
-            ("VALIGN",       (0, 0), (-1, -1), "TOP"),
-            ("RIGHTPADDING", (0, 0), (0, 0),   5),
-            ("LEFTPADDING",  (1, 0), (1, 0),   5),
+            ("LEFTPADDING",  (0,0),(-1,-1), 0),
+            ("RIGHTPADDING", (0,0),(-1,-1), 0),
+            ("TOPPADDING",   (0,0),(-1,-1), 0),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 0),
+            ("VALIGN",       (0,0),(-1,-1), "TOP"),
+            ("RIGHTPADDING", (0,0),(0,0),   int(GAP/2)),
+            ("LEFTPADDING",  (1,0),(1,0),   int(GAP/2)),
         ]))
         return tbl
 
     story = []
 
-    # ── Header banner
+    # ── Header
     hdr = Table([
-        [cell("Adventure Shield", bold=True, align="CENTER", color=WHITE, size=20)],
-        [cell("COVERAGE &amp; PREMIUM SUMMARY", align="CENTER", color=colors.HexColor("#A8C4C8"), size=9)],
-    ], colWidths=[7.9 * inch])
+        [p("AdventureShield", bold=True, size=20, color=WHITE, align=TA_CENTER)],
+        [p("COVERAGE &amp; PREMIUM SUMMARY", size=8, color=colors.HexColor("#A8C4C8"), align=TA_CENTER)],
+    ], colWidths=[PW])
     hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), DARK),
-        ("TOPPADDING",    (0, 0), (-1, 0),  12),
-        ("BOTTOMPADDING", (0, 0), (-1, 0),  4),
-        ("TOPPADDING",    (0, 1), (-1, 1),  2),
-        ("BOTTOMPADDING", (0, 1), (-1, 1),  12),
+        ("BACKGROUND",    (0,0),(-1,-1), DARK),
+        ("TOPPADDING",    (0,0),(-1,0),  10),
+        ("BOTTOMPADDING", (0,0),(-1,0),  3),
+        ("TOPPADDING",    (0,1),(-1,1),  2),
+        ("BOTTOMPADDING", (0,1),(-1,1),  10),
     ]))
     story.append(hdr)
-    story.append(Spacer(1, 7))
+    story.append(Spacer(1, 6))
 
-    # ── Policy info bar
+    # ── Policy info
     info = Table([
-        [cell("NAMED INSURED", color=GREY, size=7), cell("POLICY PERIOD", color=GREY, size=7)],
-        [cell(data.get("insured", "—"), bold=True, size=9),
-         cell(f"{data.get('effective_date','—')}  →  {data.get('expiry_date','—')}", bold=True, size=9)],
-    ], colWidths=[3.95 * inch, 3.95 * inch])
+        [p("NAMED INSURED", size=7, color=GREY), p("POLICY PERIOD", size=7, color=GREY)],
+        [p(data.get("insured","—"), bold=True, size=9),
+         p(f"{data.get('effective_date','—')}  →  {data.get('expiry_date','—')}", bold=True, size=9)],
+    ], colWidths=[PW/2, PW/2])
     info.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
-        ("TOPPADDING",    (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
-        ("LINEBELOW",     (0, 0), (-1, 0),  0.5, colors.lightgrey),
+        ("BACKGROUND",    (0,0),(-1,-1), LIGHT),
+        ("TOPPADDING",    (0,0),(-1,-1), 5),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
+        ("LEFTPADDING",   (0,0),(-1,-1), 10),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 10),
+        ("LINEBELOW",     (0,0),(-1,0),  0.5, colors.lightgrey),
     ]))
     story.append(info)
-    story.append(Spacer(1, 7))
+    story.append(Spacer(1, 6))
 
-    # ── Coverage tables side by side (WITH values)
-    gl_cov = make_table([
-        [cell("Commercial General Liability", bold=True, color=WHITE), cell("Limit", bold=True, color=WHITE, align="RIGHT")],
-        [cell("General Aggregate"),          cell(fmt(data.get("gl_aggregate",  "—")), align="RIGHT")],
-        [cell("Each Occurrence"),            cell(fmt(data.get("gl_occurrence", "—")), align="RIGHT")],
-        [cell("Products-Completed Ops"),     cell(fmt(data.get("gl_products",   "—")), align="RIGHT")],
-        [cell("Personal/Advertising Injury"),cell(fmt(data.get("gl_pi",         "—")), align="RIGHT")],
-        [cell("Damage to Premises Rented"),  cell(fmt(data.get("gl_premises",   "—")), align="RIGHT")],
-        [cell("Medical Expense"),            cell(fmt(data.get("gl_med_exp",    "—")), align="RIGHT")],
+    # ── Coverage tables
+    gl_cov = build_table([
+        [p("Commercial General Liability", bold=True, color=WHITE), p("Limit", bold=True, color=WHITE, align=TA_CENTER)],
+        [p("General Aggregate"),           p(fmt(data.get("gl_aggregate",  "—")), align=TA_CENTER)],
+        [p("Each Occurrence"),             p(fmt(data.get("gl_occurrence", "—")), align=TA_CENTER)],
+        [p("Products-Completed Ops"),      p(fmt(data.get("gl_products",   "—")), align=TA_CENTER)],
+        [p("Personal/Advertising Injury"), p(fmt(data.get("gl_pi",         "—")), align=TA_CENTER)],
+        [p("Damage to Premises Rented"),   p(fmt(data.get("gl_premises",   "—")), align=TA_CENTER)],
+        [p("Medical Expense"),             p(fmt(data.get("gl_med_exp",    "—")), align=TA_CENTER)],
     ])
 
-    auto_cov = make_table([
-        [cell("Business Auto", bold=True, color=WHITE), cell("Limit", bold=True, color=WHITE, align="RIGHT")],
-        [cell("BI per Person"),               cell(fmt(data.get("auto_bi_person", "—")), align="RIGHT")],
-        [cell("BI per Accident"),             cell(fmt(data.get("auto_bi_acc",    "—")), align="RIGHT")],
-        [cell("Property Damage per Accident"),cell(fmt(data.get("auto_pd",        "—")), align="RIGHT")],
-        [cell("Collision"),                   cell("Excluded", align="RIGHT")],
-        [cell("Comprehensive"),               cell("Excluded", align="RIGHT")],
-        [cell(""),                            cell("")],  # match GL row count
+    auto_cov = build_table([
+        [p("Business Auto", bold=True, color=WHITE), p("Limit", bold=True, color=WHITE, align=TA_CENTER)],
+        [p("BI per Person"),                p(fmt(data.get("auto_bi_person","—")), align=TA_CENTER)],
+        [p("BI per Accident"),              p(fmt(data.get("auto_bi_acc",   "—")), align=TA_CENTER)],
+        [p("Property Damage per Accident"), p(fmt(data.get("auto_pd",       "—")), align=TA_CENTER)],
+        [p("Collision"),                    p("Excluded", align=TA_CENTER)],
+        [p("Comprehensive"),                p("Excluded", align=TA_CENTER)],
+        [p(""),                             p("")],
     ])
 
     story.append(side_by_side(gl_cov, auto_cov))
-    story.append(Spacer(1, 7))
+    story.append(Spacer(1, 6))
 
-    # ── Premium tables side by side (WITH values)
-    gl_prem = make_table([
-        [cell("GL Premium Summary", bold=True, color=WHITE), cell("Paid in Full", bold=True, color=WHITE, align="RIGHT")],
-        [cell("Premium"),         cell(fmt(data.get("gl_premium",       "—"), currency=True), align="RIGHT")],
-        [cell("Surplus Lines Tax"),cell(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align="RIGHT")],
-        [cell("Stamping Fee"),    cell(fmt(data.get("gl_stamp_fee",     "—"), currency=True), align="RIGHT")],
-        [cell("Platform Fee"),    cell(fmt(data.get("gl_platform_fee",  "—"), currency=True), align="RIGHT")],
-        [cell("Total & Taxes / Fees", bold=True, color=WHITE), cell(fmt(data.get("gl_total_premium", "—"), currency=True), bold=True, color=WHITE, align="RIGHT")],
+    # ── Premium tables
+    gl_prem = build_table([
+        [p("GL Premium Summary", bold=True, color=WHITE), p("Paid in Full", bold=True, color=WHITE, align=TA_CENTER)],
+        [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_CENTER)],
+        [p("Surplus Lines Tax"), p(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align=TA_CENTER)],
+        [p("Stamping Fee"),      p(fmt(data.get("gl_stamp_fee",    "—"), currency=True), align=TA_CENTER)],
+        [p("Platform Fee"),      p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_CENTER)],
+        [p("Total & Taxes / Fees", bold=True, color=WHITE), p(fmt(data.get("gl_total_premium","—"), currency=True), bold=True, color=WHITE, align=TA_CENTER)],
     ], total_row=True)
 
-    auto_prem = make_table([
-        [cell("Auto Premium Summary", bold=True, color=WHITE), cell("Paid in Full", bold=True, color=WHITE, align="RIGHT")],
-        [cell("Annual Premium"),   cell(fmt(data.get("auto_premium",     "—"), currency=True), align="RIGHT")],
-        [cell("Surplus Lines Tax"),cell(fmt(data.get("auto_surplus_tax", "—"), currency=True), align="RIGHT")],
-        [cell("Stamping Fee"),     cell(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align="RIGHT")],
-        [cell("Technology Fee"),   cell(fmt(data.get("auto_tech_fee",    "—"), currency=True), align="RIGHT")],
-        [cell("Total", bold=True, color=WHITE), cell(fmt(data.get("auto_total", "—"), currency=True), bold=True, color=WHITE, align="RIGHT")],
+    auto_prem = build_table([
+        [p("Auto Premium Summary", bold=True, color=WHITE), p("Paid in Full", bold=True, color=WHITE, align=TA_CENTER)],
+        [p("Annual Premium"),    p(fmt(data.get("auto_premium",     "—"), currency=True), align=TA_CENTER)],
+        [p("Surplus Lines Tax"), p(fmt(data.get("auto_surplus_tax", "—"), currency=True), align=TA_CENTER)],
+        [p("Stamping Fee"),      p(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align=TA_CENTER)],
+        [p("Technology Fee"),    p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_CENTER)],
+        [p("Total", bold=True, color=WHITE), p(fmt(data.get("auto_total","—"), currency=True), bold=True, color=WHITE, align=TA_CENTER)],
     ], total_row=True)
 
     story.append(side_by_side(gl_prem, auto_prem))
     story.append(Spacer(1, 10))
 
-    # ── Grand total banner
+    # ── Grand total
     grand = Table([[
-        cell("TOTAL ANNUAL COST — ALL COVERAGES", bold=True, color=WHITE, size=11),
-        cell(grand_total_fmt, bold=True, color=WHITE, align="RIGHT", size=14),
-    ]], colWidths=[5.5 * inch, 2.4 * inch])
+        p("TOTAL ANNUAL COST — ALL COVERAGES", bold=True, color=WHITE, size=11),
+        p(grand_total_fmt, bold=True, color=WHITE, size=14, align=TA_CENTER),
+    ]], colWidths=[PW * 0.68, PW * 0.32])
     grand.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, -1), GOLD),
-        ("TOPPADDING",    (0, 0), (-1, -1), 12),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 14),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 14),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("BACKGROUND",    (0,0),(-1,-1), GOLD),
+        ("TOPPADDING",    (0,0),(-1,-1), 12),
+        ("BOTTOMPADDING", (0,0),(-1,-1), 12),
+        ("LEFTPADDING",   (0,0),(-1,-1), 14),
+        ("RIGHTPADDING",  (0,0),(-1,-1), 14),
+        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
+        ("ALIGN",         (1,0),(1,0),   "RIGHT"),
     ]))
     story.append(grand)
 
@@ -339,12 +304,11 @@ def generate_summary_pdf(data: dict) -> bytes:
     return buffer.getvalue()
 
 
-# ── MAIN APP ──────────────────────────────────────────────────────────────────
-
+# ── MAIN APP
 st.markdown("""
 <div class="hero-banner">
     <div class="hero-badge">🛡️ Insurance</div>
-    <div class="hero-title">Adventure Shield</div>
+    <div class="hero-title">AdventureShield</div>
     <div class="hero-title" style="color: #2E7D8C;">Proposal Builder</div>
     <div class="hero-subtitle">Upload your carrier documents — we'll sort, reorder, and package them automatically.</div>
 </div>
@@ -353,9 +317,7 @@ st.markdown("""
 st.markdown('<div class="section-header">📂 Upload Documents</div>', unsafe_allow_html=True)
 files = st.file_uploader(
     "Drop your quote PDFs here or click to browse",
-    type="pdf",
-    accept_multiple_files=True,
-    label_visibility="collapsed"
+    type="pdf", accept_multiple_files=True, label_visibility="collapsed"
 )
 
 if files:
@@ -376,34 +338,13 @@ if files:
     for category in MASTER_ORDER:
         count = len(buckets[category])
         if count > 0:
-            cards_html += f"""
-            <div class="status-card success">
-                <div class="status-icon">✅</div>
-                <div>
-                    <div class="status-label">{category}</div>
-                    <div class="status-count">{count} page{"s" if count != 1 else ""} found</div>
-                </div>
-            </div>"""
+            cards_html += f"""<div class="status-card success"><div class="status-icon">✅</div><div><div class="status-label">{category}</div><div class="status-count">{count} page{"s" if count != 1 else ""} found</div></div></div>"""
         else:
-            cards_html += f"""
-            <div class="status-card warning">
-                <div class="status-icon">⚠️</div>
-                <div>
-                    <div class="status-label">{category}</div>
-                    <div class="status-count">No pages found</div>
-                </div>
-            </div>"""
+            cards_html += f"""<div class="status-card warning"><div class="status-icon">⚠️</div><div><div class="status-label">{category}</div><div class="status-count">No pages found</div></div></div>"""
 
     misc_count = len(buckets["Unclassified/Misc"])
     if misc_count > 0:
-        cards_html += f"""
-        <div class="status-card error">
-            <div class="status-icon">❓</div>
-            <div>
-                <div class="status-label">Unclassified / Misc</div>
-                <div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div>
-            </div>
-        </div>"""
+        cards_html += f"""<div class="status-card error"><div class="status-icon">❓</div><div><div class="status-label">Unclassified / Misc</div><div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div></div></div>"""
     cards_html += '</div>'
     st.markdown(cards_html, unsafe_allow_html=True)
 
@@ -416,7 +357,6 @@ if files:
                     writer.add_page(page)
             for page in buckets["Unclassified/Misc"]:
                 writer.add_page(page)
-
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
@@ -431,13 +371,13 @@ if files:
             st.download_button(
                 label="📦 Download Ordered Package",
                 data=output_buffer.getvalue(),
-                file_name="Adventure_Shield_Proposal_Package.pdf",
+                file_name="AdventureShield_Proposal_Package.pdf",
                 mime="application/pdf"
             )
         with col2:
             st.download_button(
                 label="📄 Download Coverage Summary",
                 data=summary_pdf_bytes,
-                file_name="Adventure_Shield_Coverage_Summary.pdf",
+                file_name="AdventureShield_Coverage_Summary.pdf",
                 mime="application/pdf"
             )
