@@ -161,20 +161,28 @@ def generate_summary_pdf(data: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
-        rightMargin=0.75 * inch, leftMargin=0.75 * inch,
-        topMargin=0.75 * inch,   bottomMargin=0.75 * inch,
+        rightMargin=0.6 * inch, leftMargin=0.6 * inch,
+        topMargin=0.5 * inch,   bottomMargin=0.5 * inch,
     )
 
-    DARK  = colors.HexColor("#1B2A4A")
-    TEAL  = colors.HexColor("#2E7D8C")
-    LIGHT = colors.HexColor("#F9F9F9")
-    WHITE = colors.white
-    BLACK = colors.HexColor("#222222")
+    DARK   = colors.HexColor("#1B2A4A")
+    TEAL   = colors.HexColor("#2E7D8C")
+    GOLD   = colors.HexColor("#C9A84C")
+    LIGHT  = colors.HexColor("#F4F6FA")
+    WHITE  = colors.white
+    BLACK  = colors.HexColor("#222222")
 
-    bold_label = ParagraphStyle("bold_label", fontSize=10, fontName="Helvetica-Bold",
-                                textColor=BLACK, spaceAfter=1)
-    normal_val = ParagraphStyle("normal_val", fontSize=10, fontName="Helvetica",
-                                textColor=BLACK, spaceAfter=6)
+    # Styles
+    bold_label  = ParagraphStyle("bold_label", fontSize=9,  fontName="Helvetica-Bold", textColor=BLACK, spaceAfter=1)
+    normal_val  = ParagraphStyle("normal_val", fontSize=9,  fontName="Helvetica",      textColor=BLACK, spaceAfter=4)
+    title_style = ParagraphStyle("title",      fontSize=18, fontName="Helvetica-Bold", textColor=WHITE, alignment=TA_CENTER)
+    sub_style   = ParagraphStyle("sub",        fontSize=9,  fontName="Helvetica",      textColor=colors.HexColor("#A8C4C8"), alignment=TA_CENTER)
+
+    def parse_float(val):
+        try:
+            return float(val.replace(',', '').replace('$', ''))
+        except:
+            return 0.0
 
     def fmt(val, currency=False):
         if not val or val == "—":
@@ -186,15 +194,22 @@ def generate_summary_pdf(data: dict) -> bytes:
                 return val
         return f"${val}" if not val.startswith("$") else val
 
-    def two_col_table(rows):
-        CW = [4.5 * inch, 2.5 * inch]
+    # Calculate grand total
+    gl_total_val   = parse_float(data.get("gl_total_premium", "0"))
+    auto_total_val = parse_float(data.get("auto_total", "0"))
+    grand_total    = gl_total_val + auto_total_val
+    grand_total_fmt = f"${grand_total:,.2f}" if grand_total > 0 else "—"
+
+    CW = [4.2 * inch, 2.8 * inch]  # col widths
+
+    def coverage_table(rows):
         style_cmds = [
             ("BACKGROUND",    (0, 0), (-1, 0),  DARK),
             ("TEXTCOLOR",     (0, 0), (-1, 0),  WHITE),
             ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",      (0, 0), (-1, -1), 9),
-            ("TOPPADDING",    (0, 0), (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+            ("FONTSIZE",      (0, 0), (-1, -1), 8),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ("LEFTPADDING",   (0, 0), (-1, -1), 8),
             ("RIGHTPADDING",  (0, 0), (-1, -1), 8),
             ("GRID",          (0, 0), (-1, -1), 0.25, colors.lightgrey),
@@ -206,8 +221,7 @@ def generate_summary_pdf(data: dict) -> bytes:
         tbl.setStyle(TableStyle(style_cmds))
         return tbl
 
-    def total_row_table(rows):
-        CW = [4.5 * inch, 2.5 * inch]
+    def premium_table(rows):
         style_cmds = [
             ("BACKGROUND",    (0, 0),  (-1, 0),  DARK),
             ("TEXTCOLOR",     (0, 0),  (-1, 0),  WHITE),
@@ -215,9 +229,9 @@ def generate_summary_pdf(data: dict) -> bytes:
             ("BACKGROUND",    (0, -1), (-1, -1), TEAL),
             ("TEXTCOLOR",     (0, -1), (-1, -1), WHITE),
             ("FONTNAME",      (0, -1), (-1, -1), "Helvetica-Bold"),
-            ("FONTSIZE",      (0, 0),  (-1, -1), 9),
-            ("TOPPADDING",    (0, 0),  (-1, -1), 6),
-            ("BOTTOMPADDING", (0, 0),  (-1, -1), 6),
+            ("FONTSIZE",      (0, 0),  (-1, -1), 8),
+            ("TOPPADDING",    (0, 0),  (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0),  (-1, -1), 5),
             ("LEFTPADDING",   (0, 0),  (-1, -1), 8),
             ("RIGHTPADDING",  (0, 0),  (-1, -1), 8),
             ("GRID",          (0, 0),  (-1, -1), 0.25, colors.lightgrey),
@@ -230,54 +244,133 @@ def generate_summary_pdf(data: dict) -> bytes:
         return tbl
 
     story = []
-    story.append(Paragraph("Name Insured", bold_label))
-    story.append(Paragraph(data.get("insured", "—"), normal_val))
-    story.append(Paragraph("Period of Insurance", bold_label))
-    story.append(Paragraph(
-        f"{data.get('effective_date', '—')} to {data.get('expiry_date', '—')}",
-        normal_val
-    ))
-    story.append(Spacer(1, 12))
 
-    story.append(two_col_table([
-        ["Commercial General Liability Coverage", "Limit"],
-        ["General Aggregate Limit",               fmt(data.get("gl_aggregate",  "—"))],
-        ["Each Occurrence Limit",                 fmt(data.get("gl_occurrence", "—"))],
-        ["Products-Completed Operations",         fmt(data.get("gl_products",   "—"))],
-        ["Personal/Advertising Injury",           fmt(data.get("gl_pi",         "—"))],
-        ["Damage to Premises Rented",             fmt(data.get("gl_premises",   "—"))],
-        ["Medical Expense",                       fmt(data.get("gl_med_exp",    "—"))],
+    # ── Header
+    header_data = [[Paragraph("Adventure Shield", title_style)],
+                   [Paragraph("COVERAGE &amp; PREMIUM SUMMARY", sub_style)]]
+    header_tbl = Table(header_data, colWidths=[7 * inch])
+    header_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), DARK),
+        ("TOPPADDING",    (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
     ]))
-    story.append(Spacer(1, 14))
+    story.append(header_tbl)
+    story.append(Spacer(1, 8))
 
-    story.append(two_col_table([
-        ["Business Auto Coverage",        "Limit"],
+    # ── Policy info as a compact inline table
+    info_style_label = ParagraphStyle("il", fontSize=8, fontName="Helvetica-Bold", textColor=colors.grey)
+    info_style_value = ParagraphStyle("iv", fontSize=9, fontName="Helvetica-Bold", textColor=BLACK)
+
+    info_tbl = Table([
+        [
+            Paragraph("NAMED INSURED", info_style_label),
+            Paragraph("POLICY PERIOD", info_style_label),
+        ],
+        [
+            Paragraph(data.get("insured", "—"), info_style_value),
+            Paragraph(f"{data.get('effective_date', '—')}  →  {data.get('expiry_date', '—')}", info_style_value),
+        ]
+    ], colWidths=[3.5 * inch, 3.5 * inch])
+    info_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), LIGHT),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 10),
+        ("LINEBELOW",     (0, 0), (-1, 0),  0.5, colors.lightgrey),
+    ]))
+    story.append(info_tbl)
+    story.append(Spacer(1, 10))
+
+    # ── Two columns: GL left, Auto right
+    gl_cov = coverage_table([
+        ["Commercial General Liability",  "Limit"],
+        ["General Aggregate",             fmt(data.get("gl_aggregate",  "—"))],
+        ["Each Occurrence",               fmt(data.get("gl_occurrence", "—"))],
+        ["Products-Completed Ops",        fmt(data.get("gl_products",   "—"))],
+        ["Personal/Advertising Injury",   fmt(data.get("gl_pi",         "—"))],
+        ["Damage to Premises Rented",     fmt(data.get("gl_premises",   "—"))],
+        ["Medical Expense",               fmt(data.get("gl_med_exp",    "—"))],
+    ])
+
+    auto_cov = coverage_table([
+        ["Business Auto",                 "Limit"],
         ["BI per Person",                 fmt(data.get("auto_bi_person", "—"))],
         ["BI per Accident",               fmt(data.get("auto_bi_acc",    "—"))],
         ["Property Damage per Accident",  fmt(data.get("auto_pd",        "—"))],
         ["Collision",                     "Excluded"],
         ["Comprehensive",                 "Excluded"],
-    ]))
-    story.append(Spacer(1, 14))
+        ["",                              ""],  # spacer row to match GL height
+    ])
 
-    story.append(total_row_table([
-        ["General Liability Premium Summary", "Paid in Full"],
-        ["Premium",                           fmt(data.get("gl_premium",       "—"), currency=True)],
-        ["Surplus Lines Tax",                 fmt(data.get("gl_surplus_tax",   "—"), currency=True)],
-        ["Stamping Fee",                      fmt(data.get("gl_stamp_fee",     "—"), currency=True)],
-        ["Platform Fee",                      fmt(data.get("gl_platform_fee",  "—"), currency=True)],
-        ["Total Premium & Taxes / Fees",      fmt(data.get("gl_total_premium", "—"), currency=True)],
+    two_up = Table([[gl_cov, auto_cov]], colWidths=[3.6 * inch, 3.6 * inch])
+    two_up.setStyle(TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("INNERGRID",    (0, 0), (-1, -1), 0, colors.white),
+        ("RIGHTPADDING", (0, 0), (0, 0),   6),
+        ("LEFTPADDING",  (1, 0), (1, 0),   6),
     ]))
-    story.append(Spacer(1, 14))
+    story.append(two_up)
+    story.append(Spacer(1, 10))
 
-    story.append(total_row_table([
-        ["Business Auto Premium Summary", "Paid in Full"],
-        ["Annual Premium",                fmt(data.get("auto_premium",     "—"), currency=True)],
-        ["Surplus Lines Tax",             fmt(data.get("auto_surplus_tax", "—"), currency=True)],
-        ["Stamping Fee",                  fmt(data.get("auto_stamp_fee",   "—"), currency=True)],
-        ["Technology Transaction Fee",    fmt(data.get("auto_tech_fee",    "—"), currency=True)],
-        ["Total",                         fmt(data.get("auto_total",       "—"), currency=True)],
+    # ── Two columns: GL premium left, Auto premium right
+    gl_prem = premium_table([
+        ["GL Premium Summary",        "Paid in Full"],
+        ["Premium",                   fmt(data.get("gl_premium",       "—"), currency=True)],
+        ["Surplus Lines Tax",         fmt(data.get("gl_surplus_tax",   "—"), currency=True)],
+        ["Stamping Fee",              fmt(data.get("gl_stamp_fee",     "—"), currency=True)],
+        ["Platform Fee",              fmt(data.get("gl_platform_fee",  "—"), currency=True)],
+        ["Total & Taxes / Fees",      fmt(data.get("gl_total_premium", "—"), currency=True)],
+    ])
+
+    auto_prem = premium_table([
+        ["Auto Premium Summary",      "Paid in Full"],
+        ["Annual Premium",            fmt(data.get("auto_premium",     "—"), currency=True)],
+        ["Surplus Lines Tax",         fmt(data.get("auto_surplus_tax", "—"), currency=True)],
+        ["Stamping Fee",              fmt(data.get("auto_stamp_fee",   "—"), currency=True)],
+        ["Technology Fee",            fmt(data.get("auto_tech_fee",    "—"), currency=True)],
+        ["Total",                     fmt(data.get("auto_total",       "—"), currency=True)],
+    ])
+
+    prem_two_up = Table([[gl_prem, auto_prem]], colWidths=[3.6 * inch, 3.6 * inch])
+    prem_two_up.setStyle(TableStyle([
+        ("LEFTPADDING",  (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING",   (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 0),
+        ("VALIGN",       (0, 0), (-1, -1), "TOP"),
+        ("RIGHTPADDING", (0, 0), (0, 0),   6),
+        ("LEFTPADDING",  (1, 0), (1, 0),   6),
     ]))
+    story.append(prem_two_up)
+    story.append(Spacer(1, 12))
+
+    # ── Grand Total Banner
+    grand_tbl = Table(
+        [[
+            Paragraph("TOTAL ANNUAL COST — ALL COVERAGES", ParagraphStyle(
+                "gt_label", fontSize=11, fontName="Helvetica-Bold", textColor=WHITE
+            )),
+            Paragraph(grand_total_fmt, ParagraphStyle(
+                "gt_val", fontSize=14, fontName="Helvetica-Bold", textColor=WHITE, alignment=1
+            ))
+        ]],
+        colWidths=[4.8 * inch, 2.2 * inch]
+    )
+    grand_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), GOLD),
+        ("TOPPADDING",    (0, 0), (-1, -1), 12),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 12),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 14),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 14),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN",         (1, 0), (1, 0),   "RIGHT"),
+    ]))
+    story.append(grand_tbl)
 
     doc.build(story)
     return buffer.getvalue()
@@ -285,7 +378,6 @@ def generate_summary_pdf(data: dict) -> bytes:
 
 # ── MAIN APP ──────────────────────────────────────────────────────────────────
 
-# Hero Banner
 st.markdown("""
 <div class="hero-banner">
     <div class="hero-badge">🛡️ Insurance</div>
@@ -295,7 +387,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Upload section
 st.markdown('<div class="section-header">📂 Upload Documents</div>', unsafe_allow_html=True)
 files = st.file_uploader(
     "Drop your quote PDFs here or click to browse",
@@ -316,7 +407,6 @@ if files:
                 category = classify_page(text)
                 buckets[category].append(page)
 
-    # Classification summary
     st.markdown('<div class="section-header">📋 Document Classification</div>', unsafe_allow_html=True)
 
     cards_html = '<div class="status-grid">'
@@ -351,11 +441,9 @@ if files:
                 <div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div>
             </div>
         </div>"""
-
     cards_html += '</div>'
     st.markdown(cards_html, unsafe_allow_html=True)
 
-    # Generate button
     st.markdown('<div class="section-header">🚀 Generate Package</div>', unsafe_allow_html=True)
     if st.button("GENERATE ORDERED PACKAGE + COVERAGE SUMMARY"):
         with st.spinner("Building your package..."):
