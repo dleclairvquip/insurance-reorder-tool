@@ -7,7 +7,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 
 # ── 1. PAGE CONFIG
 st.set_page_config(page_title="AdventureShield Proposal Builder", page_icon="🛡️", layout="wide")
@@ -16,7 +16,7 @@ st.set_page_config(page_title="AdventureShield Proposal Builder", page_icon="�
 st.markdown("""
 <style>
     [data-testid="stAppViewContainer"] { background-color: #0F1923; }
-    [data-testid="stSidebar"] { background-color: #0F1923; }
+    [data-testid="stSidebar"] { background-color: #0F1923; border-right: 1px solid #263548; }
     section[data-testid="stMain"] { background-color: #0F1923; }
     .hero-banner {
         background: linear-gradient(135deg, #1B2A4A 0%, #2E7D8C 100%);
@@ -42,7 +42,7 @@ st.markdown("""
     [data-testid="stDownloadButton"] > button:hover { background: #2E7D8C !important; }
     [data-testid="stSuccess"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
-    p, li, span, label { color: #A8C4C8; }
+    p, li, span, label, [data-testid="stMarkdownContainer"] p { color: #A8C4C8; }
     h1, h2, h3 { color: #FFFFFF; }
 </style>
 """, unsafe_allow_html=True)
@@ -99,36 +99,36 @@ def extract_coverage_data(buckets):
     all_text  = gl_text + "\n" + auto_text
 
     return {
-        "insured":           search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
+        "insured":            search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
                                                r"Name(?:d)? Insured\s*\n([^\n]+)"),
-        "effective_date":    search(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
-        "expiry_date":       search(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
-        "gl_carrier":        search(gl_text,   r"Carrier\s+([^\n]+)"),
-        "gl_aggregate":      search(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
-        "gl_occurrence":     search(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
-        "gl_products":       search(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
-        "gl_pi":             search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
-        "gl_premises":       search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
-        "gl_med_exp":        search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
-        "gl_premium":        search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
-        "gl_surplus_tax":    search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":      search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":   search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":  search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
-        "auto_carrier":      search(auto_text, r"Carrier\s+([^\n]+)"),
-        "auto_bi_person":    search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
-        "auto_bi_acc":       search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_pd":           search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_premium":      search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
-        "auto_surplus_tax":  search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":    search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "auto_tech_fee":     search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
-        "auto_total":        search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
+        "effective_date":     search(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
+        "expiry_date":        search(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
+        "gl_carrier":         search(gl_text,   r"Carrier\s+([^\n]+)"),
+        "gl_aggregate":       search(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
+        "gl_occurrence":      search(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
+        "gl_products":        search(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
+        "gl_pi":              search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
+        "gl_premises":        search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
+        "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
+        "gl_premium":         search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":    search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
+        "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
+        "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
+        "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_premium":       search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":     search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
+        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
     }
 
 
 # ── 6. SUMMARY PDF GENERATOR
-def generate_summary_pdf(data: dict) -> bytes:
+def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_text: str) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
@@ -262,23 +262,26 @@ def generate_summary_pdf(data: dict) -> bytes:
     story.append(side_by_side(gl_cov, auto_cov))
     story.append(Spacer(1, 6))
 
-    # ── Premium tables
+    # ── Dynamic Header Column Text Assignment
+    right_column_header = custom_header_text if show_payment_header else ""
+
+    # ── Premium tables (With currency aligned properly to the right)
     gl_prem = build_table([
-        [p("GL Premium Summary", bold=True, color=WHITE), p("Paid in Full", bold=True, color=WHITE, align=TA_CENTER)],
-        [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_CENTER)],
-        [p("Surplus Lines Tax"), p(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align=TA_CENTER)],
-        [p("Stamping Fee"),      p(fmt(data.get("gl_stamp_fee",    "—"), currency=True), align=TA_CENTER)],
-        [p("Platform Fee"),      p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_CENTER)],
-        [p("Total & Taxes / Fees", bold=True, color=WHITE), p(fmt(data.get("gl_total_premium","—"), currency=True), bold=True, color=WHITE, align=TA_CENTER)],
+        [p("GL Premium Summary", bold=True, color=WHITE), p(right_column_header, bold=True, color=WHITE, align=TA_CENTER)],
+        [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_RIGHT)],
+        [p("Surplus Lines Tax"), p(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align=TA_RIGHT)],
+        [p("Stamping Fee"),      p(fmt(data.get("gl_stamp_fee",    "—"), currency=True), align=TA_RIGHT)],
+        [p("Platform Fee"),      p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_RIGHT)],
+        [p("Total & Taxes / Fees", bold=True, color=WHITE), p(fmt(data.get("gl_total_premium","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
     ], total_row=True)
 
     auto_prem = build_table([
-        [p("Auto Premium Summary", bold=True, color=WHITE), p("Paid in Full", bold=True, color=WHITE, align=TA_CENTER)],
-        [p("Annual Premium"),    p(fmt(data.get("auto_premium",     "—"), currency=True), align=TA_CENTER)],
-        [p("Surplus Lines Tax"), p(fmt(data.get("auto_surplus_tax", "—"), currency=True), align=TA_CENTER)],
-        [p("Stamping Fee"),      p(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align=TA_CENTER)],
-        [p("Technology Fee"),    p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_CENTER)],
-        [p("Total", bold=True, color=WHITE), p(fmt(data.get("auto_total","—"), currency=True), bold=True, color=WHITE, align=TA_CENTER)],
+        [p("Auto Premium Summary", bold=True, color=WHITE), p(right_column_header, bold=True, color=WHITE, align=TA_CENTER)],
+        [p("Annual Premium"),    p(fmt(data.get("auto_premium",     "—"), currency=True), align=TA_RIGHT)],
+        [p("Surplus Lines Tax"), p(fmt(data.get("auto_surplus_tax", "—"), currency=True), align=TA_RIGHT)],
+        [p("Stamping Fee"),      p(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align=TA_RIGHT)],
+        [p("Technology Fee"),    p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_RIGHT)],
+        [p("Total", bold=True, color=WHITE), p(fmt(data.get("auto_total","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
     ], total_row=True)
 
     story.append(side_by_side(gl_prem, auto_prem))
@@ -287,7 +290,7 @@ def generate_summary_pdf(data: dict) -> bytes:
     # ── Grand total
     grand = Table([[
         p("TOTAL ANNUAL COST — ALL COVERAGES", bold=True, color=WHITE, size=11),
-        p(grand_total_fmt, bold=True, color=WHITE, size=14, align=TA_CENTER),
+        p(grand_total_fmt, bold=True, color=WHITE, size=14, align=TA_RIGHT),
     ]], colWidths=[PW * 0.68, PW * 0.32])
     grand.setStyle(TableStyle([
         ("BACKGROUND",    (0,0),(-1,-1), GOLD),
@@ -304,7 +307,13 @@ def generate_summary_pdf(data: dict) -> bytes:
     return buffer.getvalue()
 
 
-# ── MAIN APP
+# ── 7. SIDEBAR CONTROLS
+st.sidebar.markdown("### ⚙️ Premium Table Controls")
+show_paid_in_full = st.sidebar.checkbox("Show 'Paid in Full' Header", value=True)
+plan_label = "Paid in Full" if show_paid_in_full else ""
+
+
+# ── 8. MAIN APP INTERFACE
 st.markdown("""
 <div class="hero-banner">
     <div class="hero-badge">🛡️ Insurance</div>
@@ -360,8 +369,13 @@ if files:
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
+            # Data parsing and targeted conditional function firing
             coverage_data = extract_coverage_data(buckets)
-            summary_pdf_bytes = generate_summary_pdf(coverage_data)
+            summary_pdf_bytes = generate_summary_pdf(
+                coverage_data, 
+                show_payment_header=show_paid_in_full, 
+                custom_header_text=plan_label
+            )
 
         st.success("✅ Package ready — download your files below!")
         st.markdown('<div class="section-header">💾 Downloads</div>', unsafe_allow_html=True)
