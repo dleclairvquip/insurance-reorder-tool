@@ -34,7 +34,6 @@ st.markdown("""
     .status-card.success { border-left: 3px solid #2E7D8C; }
     .status-card.warning { border-left: 3px solid #C9A84C; opacity: 0.6; }
     .status-card.error   { border-left: 3px solid #E05555; }
-    .status-card.exclude { border-left: 3px solid #6B8A9A; opacity: 0.4; }
     .status-icon  { font-size: 18px; min-width: 24px; }
     .status-label { font-size: 13px; font-weight: 600; color: #FFFFFF; }
     .status-count { font-size: 12px; color: #6B8A9A; margin-top: 2px; }
@@ -65,25 +64,9 @@ MASTER_ORDER = [
 ]
 
 
-# ── 4. AGGRESSIVE CLASSIFICATION & EXCLUSION FILTER
+# ── 4. CLASSIFICATION
 def classify_page(text):
     t = " ".join(text.lower().split())
-    
-    # AGGRESSIVE PAYMENT PLAN CATCH-ALL BLOCK
-    # Targets any installment tables, dynamic schedules, financing layouts, and billing options
-    payment_keywords = [
-        "payment options", "payment plan", "installment schedule", "financing options",
-        "installment option", "schedule of payments", "premium finance", "pay schedule",
-        "payment terms", "monthly installment", "quarterly installment", "down payment",
-        "installment amount", "minimum amount due", "billing options", "payment method"
-    ]
-    
-    if any(kw in t for kw in payment_keywords):
-        # Safety bypass: don't drop the core quotes if they casually mention these terms
-        is_core_quote = ("commercial general liability" in t or "annual business auto" in t) and ("premium" in t or "limit" in t)
-        if not is_core_quote:
-            return "Excluded Payment Options"
-
     if "surplus lines" in t and "disclosure" in t:              return "Surplus Lines Disclosure"
     if "terrorism" in t and "coverage offering" in t:           return "Notice of Terrorism Coverage Offering"
     if "small print" in t:                                       return "The Small Print"
@@ -100,7 +83,7 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# ── 5. DATA EXTRACTION
+# ── 5. DATA EXTRACTION (Updated to strip out leftover left-hand columns)
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
@@ -116,6 +99,7 @@ def extract_coverage_data(buckets):
     auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
     all_text  = gl_text + "\n" + auto_text
 
+    # Note: Using `.*\$` ensures we bypass installment columns on the left and grab the absolute LAST monetary figure on that line.
     return {
         "insured":            search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
                                                r"Name(?:d)? Insured\s*\n([^\n]+)"),
@@ -128,20 +112,24 @@ def extract_coverage_data(buckets):
         "gl_pi":              search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
         "gl_premises":        search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
-        "gl_premium":         search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
-        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":    search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
+        
+        # Financial strings targeted to ignore deposit data columns sitting on the left
+        "gl_premium":         search(gl_text,   r"^Premium.*\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax.*\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee.*\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":    search(gl_text,   r"Platform Fee.*\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees.*\$([0-9,]+\.\d{2})"),
+        
         "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
         "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_premium":       search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
-        "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":     search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
-        "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
-        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
+        
+        "auto_premium":       search(auto_text, r"Annual Premium.*\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax.*\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":     search(auto_text, r"Stamping Fee.*\$([0-9,]+\.\d.2)"),
+        "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n.*\$([0-9,]+\.\d{2})"),
+        "auto_total":         search(auto_text, r"^Total.*\$([0-9,]+\.\d{2})"),
     }
 
 
@@ -350,7 +338,6 @@ files = st.file_uploader(
 if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
-    buckets["Excluded Payment Options"] = []
 
     with st.spinner("🔍 Analyzing and classifying pages..."):
         for f in files:
@@ -373,11 +360,6 @@ if files:
     misc_count = len(buckets["Unclassified/Misc"])
     if misc_count > 0:
         cards_html += f"""<div class="status-card error"><div class="status-icon">❓</div><div><div class="status-label">Unclassified / Misc</div><div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div></div></div>"""
-        
-    exclude_count = len(buckets["Excluded Payment Options"])
-    if exclude_count > 0:
-        cards_html += f"""<div class="status-card exclude"><div class="status-icon">🗑️</div><div><div class="status-label">Alternative Pay Plans</div><div class="status-count">{exclude_count} page{"s" if exclude_count != 1 else ""} removed completely</div></div></div>"""
-        
     cards_html += '</div>'
     st.markdown(cards_html, unsafe_allow_html=True)
 
@@ -385,14 +367,11 @@ if files:
     if st.button("GENERATE ORDERED PACKAGE + COVERAGE SUMMARY"):
         with st.spinner("Building your package..."):
             writer = pypdf.PdfWriter()
-            
             for category in MASTER_ORDER:
                 for page in buckets[category]:
                     writer.add_page(page)
-                    
             for page in buckets["Unclassified/Misc"]:
                 writer.add_page(page)
-                
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
