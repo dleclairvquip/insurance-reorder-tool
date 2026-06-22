@@ -83,24 +83,25 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# ── 5. DATA EXTRACTION (Isolated Line Extraction - Drops Multi-Columns on Right Side)
+# ── 5. DATA EXTRACTION
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
 
-    def search_first_column(text, *patterns):
-        """Finds the matching line, isolates the FIRST dollar value, and drops everything else."""
-        for pattern in patterns:
-            for line in text.splitlines():
-                if re.search(pattern, line, re.IGNORECASE):
-                    # Pull only the first structural currency string found on this matched row
-                    match_val = re.search(r"\$([0-9,]+\.\d{2})", line)
-                    if match_val:
-                        return match_val.group(1).strip()
+    def search_agency_bill_value(text, keywords):
+        """
+        Scans all lines for matching keywords. Once a row is found, 
+        it collects all individual numbers and returns ONLY the first one.
+        """
+        for line in text.splitlines():
+            # Check if any of the requested keywords match the current raw line
+            if any(re.search(r'\b' + re.escape(kw) + r'\b', line, re.IGNORECASE) for kw in keywords):
+                all_amounts = re.findall(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b", line)
+                if all_amounts:
+                    return all_amounts[0].strip()
         return "—"
 
     def search_standard(text, *patterns):
-        """Standard regex utility fallback for standard text matching block arrays."""
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
@@ -124,23 +125,23 @@ def extract_coverage_data(buckets):
         "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Financial line parsers targeted strictly to the first match found
-        "gl_premium":         search_first_column(gl_text, r"Premium"),
-        "gl_surplus_tax":     search_first_column(gl_text, r"Surplus\s*Lines\s*Tax"),
-        "gl_stamp_fee":       search_first_column(gl_text, r"Stamping\s*Fee"),
-        "gl_platform_fee":    search_first_column(gl_text, r"Platform\s*Fee", r"Program\s*Management\s*Fee"),
-        "gl_total_premium":   search_first_column(gl_text, r"Total\s*Premium", r"Total\s*Cost"),
+        # Pull the absolute first digit block on matched line rows, ignoring trailing finance structures
+        "gl_premium":         search_agency_bill_value(gl_text, ["Premium"]),
+        "gl_surplus_tax":     search_agency_bill_value(gl_text, ["Surplus", "Lines", "Tax"]),
+        "gl_stamp_fee":       search_agency_bill_value(gl_text, ["Stamping", "Fee"]),
+        "gl_platform_fee":    search_agency_bill_value(gl_text, ["Platform", "Program", "Management"]),
+        "gl_total_premium":   search_agency_bill_value(gl_text, ["Total", "Cost"]),
         
         "auto_carrier":       search_standard(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":     search_standard(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
         "auto_bi_acc":        search_standard(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_pd":            search_standard(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         
-        "auto_premium":       search_first_column(auto_text, r"Annual\s*Premium", r"Premium"),
-        "auto_surplus_tax":   search_first_column(auto_text, r"Surplus\s*Lines\s*Tax"),
-        "auto_stamp_fee":     search_first_column(auto_text, r"Stamping\s*Fee"),
-        "auto_tech_fee":      search_first_column(auto_text, r"Technology\s*Transaction", r"Risk\s*Management\s*Fee"),
-        "auto_total":         search_first_column(auto_text, r"^Total", r"Total\s*Cost"),
+        "auto_premium":       search_agency_bill_value(auto_text, ["Annual", "Premium"]),
+        "auto_surplus_tax":   search_agency_bill_value(auto_text, ["Surplus", "Lines", "Tax"]),
+        "auto_stamp_fee":     search_agency_bill_value(auto_text, ["Stamping", "Fee"]),
+        "auto_tech_fee":      search_agency_bill_value(auto_text, ["Technology", "Risk", "Management"]),
+        "auto_total":         search_agency_bill_value(auto_text, ["Total", "Cost"]),
     }
 
 
