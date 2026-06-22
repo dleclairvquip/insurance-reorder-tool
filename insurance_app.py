@@ -265,7 +265,7 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
     # ── Dynamic Header Column Text Assignment
     right_column_header = custom_header_text if show_payment_header else ""
 
-    # ── Premium tables (With currency aligned properly to the right)
+    # ── Premium tables
     gl_prem = build_table([
         [p("GL Premium Summary", bold=True, color=WHITE), p(right_column_header, bold=True, color=WHITE, align=TA_CENTER)],
         [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_RIGHT)],
@@ -309,8 +309,9 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
 
 # ── 7. SIDEBAR CONTROLS
 st.sidebar.markdown("### ⚙️ Premium Table Controls")
-show_paid_in_full = st.sidebar.checkbox("Show 'Paid in Full' Header", value=True)
-plan_label = "Paid in Full" if show_paid_in_full else ""
+# Checkbox enforces the "Paid in Full / Agency Bill" unified rule layout
+show_billing_info = st.sidebar.checkbox("Show 'Paid in Full / Agency Bill' Header", value=True)
+plan_label = "Paid in Full / Agency Bill" if show_billing_info else ""
 
 
 # ── 8. MAIN APP INTERFACE
@@ -369,11 +370,10 @@ if files:
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
-            # Data parsing and targeted conditional function firing
             coverage_data = extract_coverage_data(buckets)
             summary_pdf_bytes = generate_summary_pdf(
                 coverage_data, 
-                show_payment_header=show_paid_in_full, 
+                show_payment_header=show_billing_info, 
                 custom_header_text=plan_label
             )
 
