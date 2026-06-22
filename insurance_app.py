@@ -83,7 +83,7 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# ── 5. DATA EXTRACTION (Updated to strip out leftover left-hand columns)
+# ── 5. DATA EXTRACTION (Strictly Targets First Column: Agency Bill / Paid in Full)
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
@@ -99,7 +99,6 @@ def extract_coverage_data(buckets):
     auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
     all_text  = gl_text + "\n" + auto_text
 
-    # Note: Using `.*\$` ensures we bypass installment columns on the left and grab the absolute LAST monetary figure on that line.
     return {
         "insured":            search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
                                                r"Name(?:d)? Insured\s*\n([^\n]+)"),
@@ -113,23 +112,26 @@ def extract_coverage_data(buckets):
         "gl_premises":        search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Financial strings targeted to ignore deposit data columns sitting on the left
-        "gl_premium":         search(gl_text,   r"^Premium.*\$([0-9,]+\.\d{2})"),
-        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax.*\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee.*\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":    search(gl_text,   r"Platform Fee.*\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees.*\$([0-9,]+\.\d{2})"),
+        # Pulls the first numerical column immediately following the label text
+        "gl_premium":         search(gl_text,   r"Premium\s+\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]*\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":       search(gl_text,   r"Stamping\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":    search(gl_text,   r"Platform\s*\n?Fee\s+\$([0-9,]+\.\d{2})", 
+                                               r"Program\s*\n?Management\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":   search(gl_text,   r"Total\s*\n?Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})",
+                                               r"Total\s*\n?Cost\s*[^$]*\$([0-9,]+\.\d{2})"),
         
         "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
         "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         
-        "auto_premium":       search(auto_text, r"Annual Premium.*\$([0-9,]+\.\d{2})"),
-        "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax.*\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":     search(auto_text, r"Stamping Fee.*\$([0-9,]+\.\d.2)"),
-        "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n.*\$([0-9,]+\.\d{2})"),
-        "auto_total":         search(auto_text, r"^Total.*\$([0-9,]+\.\d{2})"),
+        "auto_premium":       search(auto_text, r"Annual\s*\n?Premium\s+\$([0-9,]+\.\d{2})", r"Premium\s+\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":   search(auto_text, r"Surplus\s*\n?Lines\s*Tax[:\s]*\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":     search(auto_text, r"Stamping\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_tech_fee":      search(auto_text, r"Technology\s*\n?Transaction\s*\n?Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d.2)",
+                                               r"Risk\s*\n?Management\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})", r"Total\s*\n?Cost\s*[^$]*\$([0-9,]+\.\d{2})"),
     }
 
 
@@ -277,7 +279,7 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
         [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_RIGHT)],
         [p("Surplus Lines Tax"), p(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align=TA_RIGHT)],
         [p("Stamping Fee"),      p(fmt(data.get("gl_stamp_fee",    "—"), currency=True), align=TA_RIGHT)],
-        [p("Platform Fee"),      p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_RIGHT)],
+        [p("Program Mgmt Fee"),  p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_RIGHT)],
         [p("Total & Taxes / Fees", bold=True, color=WHITE), p(fmt(data.get("gl_total_premium","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
     ], total_row=True)
 
@@ -286,7 +288,7 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
         [p("Annual Premium"),    p(fmt(data.get("auto_premium",     "—"), currency=True), align=TA_RIGHT)],
         [p("Surplus Lines Tax"), p(fmt(data.get("auto_surplus_tax", "—"), currency=True), align=TA_RIGHT)],
         [p("Stamping Fee"),      p(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align=TA_RIGHT)],
-        [p("Technology Fee"),    p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_RIGHT)],
+        [p("Risk Mgmt Fee"),     p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_RIGHT)],
         [p("Total", bold=True, color=WHITE), p(fmt(data.get("auto_total","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
     ], total_row=True)
 
@@ -315,7 +317,7 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
 
 # ── 7. SIDEBAR CONTROLS
 st.sidebar.markdown("### ⚙️ Premium Table Controls")
-show_billing_info = st.sidebar.checkbox("Show 'Paid in Full / Agency Bill' Header", value=True)
+show_billing_info = st.sidebar.checkbox("Show Billing Info Header", value=True)
 plan_label = "Paid in Full / Agency Bill" if show_billing_info else ""
 
 
