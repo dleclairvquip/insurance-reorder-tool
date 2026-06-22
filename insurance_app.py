@@ -89,14 +89,11 @@ def extract_coverage_data(buckets):
         return "\n".join(p.extract_text() or "" for p in pages)
 
     def search_agency_bill_value(text, keywords):
-        """
-        Scans all lines for matching keywords. Once a row is found, 
-        it collects all individual numbers and returns ONLY the first one.
-        """
+        """Scans raw lines dynamically for partial label matches, pulling the first dollar match found."""
         for line in text.splitlines():
-            # Check if any of the requested keywords match the current raw line
-            if any(re.search(r'\b' + re.escape(kw) + r'\b', line, re.IGNORECASE) for kw in keywords):
-                all_amounts = re.findall(r"\b\d{1,3}(?:,\d{3})*(?:\.\d{2})?\b", line)
+            # Robust sub-string row matching ignoring boundary caps
+            if any(kw.lower() in line.lower() for kw in keywords):
+                all_amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
                 if all_amounts:
                     return all_amounts[0].strip()
         return "—"
@@ -125,9 +122,9 @@ def extract_coverage_data(buckets):
         "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Pull the absolute first digit block on matched line rows, ignoring trailing finance structures
+        # Scrape and secure index-0 entries across layout variations
         "gl_premium":         search_agency_bill_value(gl_text, ["Premium"]),
-        "gl_surplus_tax":     search_agency_bill_value(gl_text, ["Surplus", "Lines", "Tax"]),
+        "gl_surplus_tax":     search_agency_bill_value(gl_text, ["Surplus", "Tax"]),
         "gl_stamp_fee":       search_agency_bill_value(gl_text, ["Stamping", "Fee"]),
         "gl_platform_fee":    search_agency_bill_value(gl_text, ["Platform", "Program", "Management"]),
         "gl_total_premium":   search_agency_bill_value(gl_text, ["Total", "Cost"]),
@@ -138,7 +135,7 @@ def extract_coverage_data(buckets):
         "auto_pd":            search_standard(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         
         "auto_premium":       search_agency_bill_value(auto_text, ["Annual", "Premium"]),
-        "auto_surplus_tax":   search_agency_bill_value(auto_text, ["Surplus", "Lines", "Tax"]),
+        "auto_surplus_tax":   search_agency_bill_value(auto_text, ["Surplus", "Tax"]),
         "auto_stamp_fee":     search_agency_bill_value(auto_text, ["Stamping", "Fee"]),
         "auto_tech_fee":      search_agency_bill_value(auto_text, ["Technology", "Risk", "Management"]),
         "auto_total":         search_agency_bill_value(auto_text, ["Total", "Cost"]),
