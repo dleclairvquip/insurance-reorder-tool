@@ -83,12 +83,24 @@ def classify_page(text):
     return "Unclassified/Misc"
 
 
-# ── 5. DATA EXTRACTION (Strictly Targets First Column: Agency Bill / Paid in Full)
+# ── 5. DATA EXTRACTION (Isolated Line Extraction - Drops Multi-Columns on Right Side)
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
 
-    def search(text, *patterns):
+    def search_first_column(text, *patterns):
+        """Finds the matching line, isolates the FIRST dollar value, and drops everything else."""
+        for pattern in patterns:
+            for line in text.splitlines():
+                if re.search(pattern, line, re.IGNORECASE):
+                    # Pull only the first structural currency string found on this matched row
+                    match_val = re.search(r"\$([0-9,]+\.\d{2})", line)
+                    if match_val:
+                        return match_val.group(1).strip()
+        return "—"
+
+    def search_standard(text, *patterns):
+        """Standard regex utility fallback for standard text matching block arrays."""
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
@@ -100,38 +112,35 @@ def extract_coverage_data(buckets):
     all_text  = gl_text + "\n" + auto_text
 
     return {
-        "insured":            search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
-                                               r"Name(?:d)? Insured\s*\n([^\n]+)"),
-        "effective_date":     search(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
-        "expiry_date":        search(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
-        "gl_carrier":         search(gl_text,   r"Carrier\s+([^\n]+)"),
-        "gl_aggregate":       search(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
-        "gl_occurrence":      search(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
-        "gl_products":        search(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
-        "gl_pi":              search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
-        "gl_premises":        search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
-        "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
+        "insured":            search_standard(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
+                                                        r"Name(?:d)? Insured\s*\n([^\n]+)"),
+        "effective_date":     search_standard(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
+        "expiry_date":        search_standard(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
+        "gl_carrier":         search_standard(gl_text,   r"Carrier\s+([^\n]+)"),
+        "gl_aggregate":       search_standard(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
+        "gl_occurrence":      search_standard(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
+        "gl_products":        search_standard(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
+        "gl_pi":              search_standard(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
+        "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
+        "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Pulls the first numerical column immediately following the label text
-        "gl_premium":         search(gl_text,   r"Premium\s+\$([0-9,]+\.\d{2})"),
-        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]*\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":       search(gl_text,   r"Stamping\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_platform_fee":    search(gl_text,   r"Platform\s*\n?Fee\s+\$([0-9,]+\.\d{2})", 
-                                               r"Program\s*\n?Management\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":   search(gl_text,   r"Total\s*\n?Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})",
-                                               r"Total\s*\n?Cost\s*[^$]*\$([0-9,]+\.\d{2})"),
+        # Financial line parsers targeted strictly to the first match found
+        "gl_premium":         search_first_column(gl_text, r"Premium"),
+        "gl_surplus_tax":     search_first_column(gl_text, r"Surplus\s*Lines\s*Tax"),
+        "gl_stamp_fee":       search_first_column(gl_text, r"Stamping\s*Fee"),
+        "gl_platform_fee":    search_first_column(gl_text, r"Platform\s*Fee", r"Program\s*Management\s*Fee"),
+        "gl_total_premium":   search_first_column(gl_text, r"Total\s*Premium", r"Total\s*Cost"),
         
-        "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
-        "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
-        "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_carrier":       search_standard(auto_text, r"Carrier\s+([^\n]+)"),
+        "auto_bi_person":     search_standard(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
+        "auto_bi_acc":        search_standard(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_pd":            search_standard(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         
-        "auto_premium":       search(auto_text, r"Annual\s*\n?Premium\s+\$([0-9,]+\.\d{2})", r"Premium\s+\$([0-9,]+\.\d{2})"),
-        "auto_surplus_tax":   search(auto_text, r"Surplus\s*\n?Lines\s*Tax[:\s]*\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":     search(auto_text, r"Stamping\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
-        "auto_tech_fee":      search(auto_text, r"Technology\s*\n?Transaction\s*\n?Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d.2)",
-                                               r"Risk\s*\n?Management\s*\n?Fee\s+\$([0-9,]+\.\d{2})"),
-        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})", r"Total\s*\n?Cost\s*[^$]*\$([0-9,]+\.\d{2})"),
+        "auto_premium":       search_first_column(auto_text, r"Annual\s*Premium", r"Premium"),
+        "auto_surplus_tax":   search_first_column(auto_text, r"Surplus\s*Lines\s*Tax"),
+        "auto_stamp_fee":     search_first_column(auto_text, r"Stamping\s*Fee"),
+        "auto_tech_fee":      search_first_column(auto_text, r"Technology\s*Transaction", r"Risk\s*Management\s*Fee"),
+        "auto_total":         search_first_column(auto_text, r"^Total", r"Total\s*Cost"),
     }
 
 
@@ -318,7 +327,7 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
 # ── 7. SIDEBAR CONTROLS
 st.sidebar.markdown("### ⚙️ Premium Table Controls")
 show_billing_info = st.sidebar.checkbox("Show Billing Info Header", value=True)
-plan_label = "Paid in Full / Agency Bill" if show_billing_info else ""
+plan_label = "Agency Bill" if show_billing_info else ""
 
 
 # ── 8. MAIN APP INTERFACE
