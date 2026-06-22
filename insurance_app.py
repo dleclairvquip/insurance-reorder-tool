@@ -83,6 +83,26 @@ def classify_page(text):
 
 
 # ── 5. DATA EXTRACTION
+def strip_extra_payment_columns(text):
+    """
+    The 'Premium Payment Plans' table on quote pages can list multiple
+    payment options side by side (e.g. Agency Bill, Outside Premium
+    Finance, etc). We only ever want the FIRST column (Agency Bill /
+    Paid in Full). For any line containing a dollar amount, this keeps
+    only the first dollar amount on that line and discards everything
+    after it — so no regex below can ever pick up a second, third, or
+    later payment-plan column, no matter how many a given quote lists.
+    """
+    out_lines = []
+    for line in text.split("\n"):
+        match = re.search(r"(\$[0-9,]+(?:\.\d{2})?)", line)
+        if match:
+            out_lines.append(line[:match.end()])
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
 def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
@@ -94,8 +114,14 @@ def extract_coverage_data(buckets):
                 return match.group(1).strip()
         return "—"
 
-    gl_text   = get_text(buckets.get("Commercial General Liability Quote", []))
-    auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
+    gl_text_raw   = get_text(buckets.get("Commercial General Liability Quote", []))
+    auto_text_raw = get_text(buckets.get("Annual Business Auto Quote", []))
+
+    # Collapse every payment-plan line down to its first ($) column only,
+    # so downstream regexes can never see Outside Premium Finance (or any
+    # other extra column) regardless of how many plans a quote lists.
+    gl_text   = strip_extra_payment_columns(gl_text_raw)
+    auto_text = strip_extra_payment_columns(auto_text_raw)
     all_text  = gl_text + "\n" + auto_text
 
     return {
@@ -112,18 +138,20 @@ def extract_coverage_data(buckets):
         "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         "gl_premium":         search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
         "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
-        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":       search(gl_text,   r"Stamping\s*\n?\s*Fee\s+\$([0-9,]+\.\d{2})"),
         "gl_platform_fee":    search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
-        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})",
+                                               r"Total Cost\s*\d*\s*\$([0-9,]+\.\d{2})"),
         "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
         "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_premium":       search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
         "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
-        "auto_stamp_fee":     search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":     search(auto_text, r"Stamping\s*\n?\s*Fee\s+\$([0-9,]+\.\d{2})"),
         "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
-        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
+        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})",
+                                               r"Total Cost\s*\d*\s*\$([0-9,]+\.\d{2})"),
     }
 
 
