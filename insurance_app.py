@@ -88,18 +88,19 @@ def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
 
-    def search_agency_bill_value(text, keywords):
+    def search_agency_bill_value(pages_list, keywords):
         """
-        Flattens lines by removing table newlines, finds the specified keyword,
-        and extracts the immediate first dollar value matching the Agency Bill column.
+        Inspects each text line directly. If a line matches one of our keywords, 
+        it pulls only the very first numeric amount present on that line to block out secondary columns.
         """
-        # Replace newlines with spaces to unify table labels split across lines
-        flat_text = text.replace("\n", " ")
-        for kw in keywords:
-            # Look for the keyword followed by any text and the first dollar amount
-            match = re.search(re.escape(kw) + r"[^\$]*\$([0-9,]+\.\d{2})", flat_text, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
+        for page in pages_list:
+            text = page.extract_text() or ""
+            for line in text.splitlines():
+                if any(kw.lower() in line.lower() for kw in keywords):
+                    # Find all monetary values on this specific row line
+                    amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
+                    if amounts:
+                        return amounts[0].strip()
         return "—"
 
     def search_standard(text, *patterns):
@@ -109,8 +110,11 @@ def extract_coverage_data(buckets):
                 return match.group(1).strip()
         return "—"
 
-    gl_text   = get_text(buckets.get("Commercial General Liability Quote", []))
-    auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
+    gl_pages   = buckets.get("Commercial General Liability Quote", [])
+    auto_pages = buckets.get("Annual Business Auto Quote", [])
+    
+    gl_text   = get_text(gl_pages)
+    auto_text = get_text(auto_pages)
     all_text  = gl_text + "\n" + auto_text
 
     return {
@@ -126,23 +130,23 @@ def extract_coverage_data(buckets):
         "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Targets the single first column data values exclusively
-        "gl_premium":         search_agency_bill_value(gl_text, ["Premium"]),
-        "gl_surplus_tax":     search_agency_bill_value(gl_text, ["Surplus Lines Tax", "Surplus"]),
-        "gl_stamp_fee":       search_agency_bill_value(gl_text, ["Stamping Fee", "Stamping"]),
-        "gl_platform_fee":    search_agency_bill_value(gl_text, ["Program Management Fee", "Platform Fee"]),
-        "gl_total_premium":   search_agency_bill_value(gl_text, ["Total Cost", "Total Premium"]),
+        # Pulls exclusively from the first column layout structure
+        "gl_premium":         search_agency_bill_value(gl_pages, ["Premium"]),
+        "gl_surplus_tax":     search_agency_bill_value(gl_pages, ["Surplus", "Tax"]),
+        "gl_stamp_fee":       search_agency_bill_value(gl_pages, ["Stamping", "Fee"]),
+        "gl_platform_fee":    search_agency_bill_value(gl_pages, ["Platform", "Program", "Management"]),
+        "gl_total_premium":   search_agency_bill_value(gl_pages, ["Total Cost", "Total Premium"]),
         
         "auto_carrier":       search_standard(auto_text, r"Carrier\s+([^\n]+)"),
         "auto_bi_person":     search_standard(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
         "auto_bi_acc":        search_standard(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         "auto_pd":            search_standard(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
         
-        "auto_premium":       search_agency_bill_value(auto_text, ["Annual Premium", "Premium"]),
-        "auto_surplus_tax":   search_agency_bill_value(auto_text, ["Surplus Lines Tax", "Surplus"]),
-        "auto_stamp_fee":     search_agency_bill_value(auto_text, ["Stamping Fee", "Stamping"]),
-        "auto_tech_fee":      search_agency_bill_value(auto_text, ["Technology Transaction Fee", "Risk Management Fee"]),
-        "auto_total":         search_agency_bill_value(auto_text, ["Total Cost", "Total"]),
+        "auto_premium":       search_agency_bill_value(auto_pages, ["Annual Premium", "Premium"]),
+        "auto_surplus_tax":   search_agency_bill_value(auto_pages, ["Surplus", "Tax"]),
+        "auto_stamp_fee":     search_agency_bill_value(auto_pages, ["Stamping", "Fee"]),
+        "auto_tech_fee":      search_agency_bill_value(auto_pages, ["Technology", "Risk", "Management"]),
+        "auto_total":         search_agency_bill_value(auto_pages, ["Total Cost", "Total"]),
     }
 
 
