@@ -65,13 +65,23 @@ MASTER_ORDER = [
 ]
 
 
-# ── 4. CLASSIFICATION (With Filter for Intercepting & Dropping Payment Plans)
+# ── 4. AGGRESSIVE CLASSIFICATION & EXCLUSION FILTER
 def classify_page(text):
     t = " ".join(text.lower().split())
     
-    # CRITICAL FILTER: Intercept and flag alternative payment options for extraction removal
-    if "payment options" in t or "payment plan" in t or "installment schedule" in t or "financing options" in t:
-        if "paid in full" not in t and "agency bill" not in t:
+    # AGGRESSIVE PAYMENT PLAN CATCH-ALL BLOCK
+    # Targets any installment tables, dynamic schedules, financing layouts, and billing options
+    payment_keywords = [
+        "payment options", "payment plan", "installment schedule", "financing options",
+        "installment option", "schedule of payments", "premium finance", "pay schedule",
+        "payment terms", "monthly installment", "quarterly installment", "down payment",
+        "installment amount", "minimum amount due", "billing options", "payment method"
+    ]
+    
+    if any(kw in t for kw in payment_keywords):
+        # Safety bypass: don't drop the core quotes if they casually mention these terms
+        is_core_quote = ("commercial general liability" in t or "annual business auto" in t) and ("premium" in t or "limit" in t)
+        if not is_core_quote:
             return "Excluded Payment Options"
 
     if "surplus lines" in t and "disclosure" in t:              return "Surplus Lines Disclosure"
@@ -340,7 +350,7 @@ files = st.file_uploader(
 if files:
     buckets = {name: [] for name in MASTER_ORDER}
     buckets["Unclassified/Misc"] = []
-    buckets["Excluded Payment Options"] = []  # Setup dynamic drop container
+    buckets["Excluded Payment Options"] = []
 
     with st.spinner("🔍 Analyzing and classifying pages..."):
         for f in files:
@@ -364,7 +374,6 @@ if files:
     if misc_count > 0:
         cards_html += f"""<div class="status-card error"><div class="status-icon">❓</div><div><div class="status-label">Unclassified / Misc</div><div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div></div></div>"""
         
-    # Visual validation card letting you know exactly how many alternative pages were stripped out
     exclude_count = len(buckets["Excluded Payment Options"])
     if exclude_count > 0:
         cards_html += f"""<div class="status-card exclude"><div class="status-icon">🗑️</div><div><div class="status-label">Alternative Pay Plans</div><div class="status-count">{exclude_count} page{"s" if exclude_count != 1 else ""} removed completely</div></div></div>"""
@@ -377,17 +386,13 @@ if files:
         with st.spinner("Building your package..."):
             writer = pypdf.PdfWriter()
             
-            # Step 1: Append standard items strictly following master sequence layout rules
             for category in MASTER_ORDER:
                 for page in buckets[category]:
                     writer.add_page(page)
                     
-            # Step 2: Append miscellaneous pages
             for page in buckets["Unclassified/Misc"]:
                 writer.add_page(page)
                 
-            # NOTE: We are intentionally completely skipping buckets["Excluded Payment Options"] here!
-            
             output_buffer = io.BytesIO()
             writer.write(output_buffer)
 
@@ -417,7 +422,6 @@ if files:
                 mime="application/pdf"
             )
 
-        # Free memory buffers to protect server runtime lifespan
         del output_buffer
         del summary_pdf_bytes
         gc.collect()
