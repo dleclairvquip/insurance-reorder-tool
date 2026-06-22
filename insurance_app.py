@@ -89,13 +89,20 @@ def extract_coverage_data(buckets):
         return "\n".join(p.extract_text() or "" for p in pages)
 
     def search_agency_bill_value(text, keywords):
-        """Scans raw lines dynamically for partial label matches, pulling the first dollar match found."""
-        for line in text.splitlines():
-            # Robust sub-string row matching ignoring boundary caps
+        """Scans raw layout text lines, splits them cleanly, and isolates index-0 values."""
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
             if any(kw.lower() in line.lower() for kw in keywords):
-                all_amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
-                if all_amounts:
-                    return all_amounts[0].strip()
+                # Check if a dollar value is combined right inside the label string line itself
+                embedded_amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
+                if embedded_amounts:
+                    return embedded_amounts[0].strip()
+                
+                # If no dollar values are on this line, evaluate the immediate subsequent lines
+                for next_line in lines[i+1:i+3]:
+                    all_amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", next_line)
+                    if all_amounts:
+                        return all_amounts[0].strip()
         return "—"
 
     def search_standard(text, *patterns):
@@ -122,7 +129,7 @@ def extract_coverage_data(buckets):
         "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
         "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
         
-        # Scrape and secure index-0 entries across layout variations
+        # Lock in extraction targeting only column 1 values
         "gl_premium":         search_agency_bill_value(gl_text, ["Premium"]),
         "gl_surplus_tax":     search_agency_bill_value(gl_text, ["Surplus", "Tax"]),
         "gl_stamp_fee":       search_agency_bill_value(gl_text, ["Stamping", "Fee"]),
