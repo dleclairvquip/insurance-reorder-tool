@@ -2,13 +2,12 @@ import streamlit as st
 import pypdf
 import io
 import re
-import gc
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # ── 1. PAGE CONFIG
 st.set_page_config(page_title="AdventureShield Proposal Builder", page_icon="🛡️", layout="wide")
@@ -17,7 +16,7 @@ st.set_page_config(page_title="AdventureShield Proposal Builder", page_icon="�
 st.markdown("""
 <style>
     [data-testid="stAppViewContainer"] { background-color: #0F1923; }
-    [data-testid="stSidebar"] { background-color: #0F1923; border-right: 1px solid #263548; }
+    [data-testid="stSidebar"] { background-color: #0F1923; }
     section[data-testid="stMain"] { background-color: #0F1923; }
     .hero-banner {
         background: linear-gradient(135deg, #1B2A4A 0%, #2E7D8C 100%);
@@ -43,7 +42,7 @@ st.markdown("""
     [data-testid="stDownloadButton"] > button:hover { background: #2E7D8C !important; }
     [data-testid="stSuccess"] { background: #1A2535 !important; border: 1px solid #2E7D8C !important; border-radius: 10px !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
-    p, li, span, label, [data-testid="stMarkdownContainer"] p { color: #A8C4C8; }
+    p, li, span, label { color: #A8C4C8; }
     h1, h2, h3 { color: #FFFFFF; }
 </style>
 """, unsafe_allow_html=True)
@@ -88,70 +87,48 @@ def extract_coverage_data(buckets):
     def get_text(pages):
         return "\n".join(p.extract_text() or "" for p in pages)
 
-    def search_agency_bill_value(pages_list, keywords):
-        """
-        Inspects each text line directly. If a line matches one of our keywords, 
-        it pulls only the very first numeric amount present on that line to block out secondary columns.
-        """
-        for page in pages_list:
-            text = page.extract_text() or ""
-            for line in text.splitlines():
-                if any(kw.lower() in line.lower() for kw in keywords):
-                    # Find all monetary values on this specific row line
-                    amounts = re.findall(r"\d{1,3}(?:,\d{3})*(?:\.\d{2})", line)
-                    if amounts:
-                        return amounts[0].strip()
-        return "—"
-
-    def search_standard(text, *patterns):
+    def search(text, *patterns):
         for pattern in patterns:
             match = re.search(pattern, text, re.IGNORECASE | re.MULTILINE)
             if match:
                 return match.group(1).strip()
         return "—"
 
-    gl_pages   = buckets.get("Commercial General Liability Quote", [])
-    auto_pages = buckets.get("Annual Business Auto Quote", [])
-    
-    gl_text   = get_text(gl_pages)
-    auto_text = get_text(auto_pages)
+    gl_text   = get_text(buckets.get("Commercial General Liability Quote", []))
+    auto_text = get_text(buckets.get("Annual Business Auto Quote", []))
     all_text  = gl_text + "\n" + auto_text
 
     return {
-        "insured":            search_standard(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
-                                                        r"Name(?:d)? Insured\s*\n([^\n]+)"),
-        "effective_date":     search_standard(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
-        "expiry_date":        search_standard(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
-        "gl_carrier":         search_standard(gl_text,   r"Carrier\s+([^\n]+)"),
-        "gl_aggregate":       search_standard(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
-        "gl_occurrence":      search_standard(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
-        "gl_products":        search_standard(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
-        "gl_pi":              search_standard(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
-        "gl_premises":        search_standard(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
-        "gl_med_exp":         search_standard(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
-        
-        # Pulls exclusively from the first column layout structure
-        "gl_premium":         search_agency_bill_value(gl_pages, ["Premium"]),
-        "gl_surplus_tax":     search_agency_bill_value(gl_pages, ["Surplus", "Tax"]),
-        "gl_stamp_fee":       search_agency_bill_value(gl_pages, ["Stamping", "Fee"]),
-        "gl_platform_fee":    search_agency_bill_value(gl_pages, ["Platform", "Program", "Management"]),
-        "gl_total_premium":   search_agency_bill_value(gl_pages, ["Total Cost", "Total Premium"]),
-        
-        "auto_carrier":       search_standard(auto_text, r"Carrier\s+([^\n]+)"),
-        "auto_bi_person":     search_standard(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
-        "auto_bi_acc":        search_standard(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        "auto_pd":            search_standard(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
-        
-        "auto_premium":       search_agency_bill_value(auto_pages, ["Annual Premium", "Premium"]),
-        "auto_surplus_tax":   search_agency_bill_value(auto_pages, ["Surplus", "Tax"]),
-        "auto_stamp_fee":     search_agency_bill_value(auto_pages, ["Stamping", "Fee"]),
-        "auto_tech_fee":      search_agency_bill_value(auto_pages, ["Technology", "Risk", "Management"]),
-        "auto_total":         search_agency_bill_value(auto_pages, ["Total Cost", "Total"]),
+        "insured":            search(all_text,  r"Name(?:d)? Insured\s+([^\n]+?)\s+Date Quoted",
+                                               r"Name(?:d)? Insured\s*\n([^\n]+)"),
+        "effective_date":     search(all_text,  r"(\d{2}/\d{2}/\d{4})\s+to\s+\d{2}/\d{2}/\d{4}"),
+        "expiry_date":        search(all_text,  r"\d{2}/\d{2}/\d{4}\s+to\s+(\d{2}/\d{2}/\d{4})"),
+        "gl_carrier":         search(gl_text,   r"Carrier\s+([^\n]+)"),
+        "gl_aggregate":       search(gl_text,   r"General Aggregate Limit[^$]*\$([0-9,]+)"),
+        "gl_occurrence":      search(gl_text,   r"Each Occurrence Limit[:\s]+\$([0-9,]+)"),
+        "gl_products":        search(gl_text,   r"Products\s*-?\s*Completed Operations[^$\n]*\$([0-9,]+)"),
+        "gl_pi":              search(gl_text,   r"Personal and Advertising Injury Limit[:\s]+\$([0-9,]+)"),
+        "gl_premises":        search(gl_text,   r"Damage to Premises Rented[^$\n]*\$([0-9,]+)"),
+        "gl_med_exp":         search(gl_text,   r"Medical Expense Limit\s+\$([0-9,]+)"),
+        "gl_premium":         search(gl_text,   r"^Premium\s+\$([0-9,]+\.\d{2})"),
+        "gl_surplus_tax":     search(gl_text,   r"Surplus\s*\n?Lines\s*Tax[:\s]+\$([0-9,]+\.\d{2})"),
+        "gl_stamp_fee":       search(gl_text,   r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_platform_fee":    search(gl_text,   r"Platform Fee\s+\$([0-9,]+\.\d{2})"),
+        "gl_total_premium":   search(gl_text,   r"Total Premium\s*&?\s*\n?Taxes\s*/\s*Fees\s+\$([0-9,]+\.\d{2})"),
+        "auto_carrier":       search(auto_text, r"Carrier\s+([^\n]+)"),
+        "auto_bi_person":     search(auto_text, r"Bodily Injury Liability per Person\s+\d+\s+\$([0-9,]+)"),
+        "auto_bi_acc":        search(auto_text, r"Bodily Injury Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_pd":            search(auto_text, r"Property Damage Liability per Accident\s+\d+\s+\$([0-9,]+)"),
+        "auto_premium":       search(auto_text, r"Annual Premium\s+\$([0-9,]+\.\d{2})"),
+        "auto_surplus_tax":   search(auto_text, r"Surplus Lines Tax\s+\$([0-9,]+\.\d{2})"),
+        "auto_stamp_fee":     search(auto_text, r"Stamping Fee\s+\$([0-9,]+\.\d{2})"),
+        "auto_tech_fee":      search(auto_text, r"Technology Transaction Fee[^\n]*\n[^\$]*\$([0-9,]+\.\d{2})"),
+        "auto_total":         search(auto_text, r"^Total\s+\$([0-9,]+\.\d{2})"),
     }
 
 
 # ── 6. SUMMARY PDF GENERATOR
-def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_text: str) -> bytes:
+def generate_summary_pdf(data: dict) -> bytes:
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, pagesize=letter,
@@ -202,222 +179,4 @@ def generate_summary_pdf(data: dict, show_payment_header: bool, custom_header_te
             ("RIGHTPADDING",  (0,0), (-1,-1), 7),
             ("GRID",          (0,0), (-1,-1), 0.3, colors.HexColor("#CCCCCC")),
             ("ALIGN",         (1,0), (1,-1),  "RIGHT"),
-            ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
-        ]
-        if total_row:
-            cmds += [
-                ("BACKGROUND", (0,-1), (-1,-1), TEAL),
-            ]
-        for i in range(1, len(rows) - (1 if total_row else 0)):
-            cmds.append(("BACKGROUND", (0,i), (-1,i), LIGHT if i%2==1 else WHITE))
-        tbl = Table(rows, colWidths=[L_COL, V_COL])
-        tbl.setStyle(TableStyle(cmds))
-        return tbl
-
-    def side_by_side(left, right):
-        tbl = Table([[left, right]], colWidths=[PANEL, PANEL])
-        tbl.setStyle(TableStyle([
-            ("LEFTPADDING",  (0,0),(-1,-1), 0),
-            ("RIGHTPADDING", (0,0),(-1,-1), 0),
-            ("TOPPADDING",   (0,0),(-1,-1), 0),
-            ("BOTTOMPADDING",(0,0),(-1,-1), 0),
-            ("VALIGN",       (0,0),(-1,-1), "TOP"),
-            ("RIGHTPADDING", (0,0),(0,0),   int(GAP/2)),
-            ("LEFTPADDING",  (1,0),(1,0),   int(GAP/2)),
-        ]))
-        return tbl
-
-    story = []
-
-    # ── Header
-    hdr = Table([
-        [p("AdventureShield", bold=True, size=20, color=WHITE, align=TA_CENTER)],
-        [p("COVERAGE &amp; PREMIUM SUMMARY", size=8, color=colors.HexColor("#A8C4C8"), align=TA_CENTER)],
-    ], colWidths=[PW])
-    hdr.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), DARK),
-        ("TOPPADDING",    (0,0),(-1,0),  10),
-        ("BOTTOMPADDING", (0,0),(-1,0),  3),
-        ("TOPPADDING",    (0,1),(-1,1),  2),
-        ("BOTTOMPADDING", (0,1),(-1,1),  10),
-    ]))
-    story.append(hdr)
-    story.append(Spacer(1, 6))
-
-    # ── Policy info
-    info = Table([
-        [p("NAMED INSURED", size=7, color=GREY), p("POLICY PERIOD", size=7, color=GREY)],
-        [p(data.get("insured","—"), bold=True, size=9),
-         p(f"{data.get('effective_date','—')}  →  {data.get('expiry_date','—')}", bold=True, size=9)],
-    ], colWidths=[PW/2, PW/2])
-    info.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), LIGHT),
-        ("TOPPADDING",    (0,0),(-1,-1), 5),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 5),
-        ("LEFTPADDING",   (0,0),(-1,-1), 10),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 10),
-        ("LINEBELOW",     (0,0),(-1,0),  0.5, colors.lightgrey),
-    ]))
-    story.append(info)
-    story.append(Spacer(1, 6))
-
-    # ── Coverage tables
-    gl_cov = build_table([
-        [p("Commercial General Liability", bold=True, color=WHITE), p("Limit", bold=True, color=WHITE, align=TA_CENTER)],
-        [p("General Aggregate"),           p(fmt(data.get("gl_aggregate",  "—")), align=TA_CENTER)],
-        [p("Each Occurrence"),             p(fmt(data.get("gl_occurrence", "—")), align=TA_CENTER)],
-        [p("Products-Completed Ops"),      p(fmt(data.get("gl_products",   "—")), align=TA_CENTER)],
-        [p("Personal/Advertising Injury"), p(fmt(data.get("gl_pi",         "—")), align=TA_CENTER)],
-        [p("Damage to Premises Rented"),   p(fmt(data.get("gl_premises",   "—")), align=TA_CENTER)],
-        [p("Medical Expense"),             p(fmt(data.get("gl_med_exp",    "—")), align=TA_CENTER)],
-    ])
-
-    auto_cov = build_table([
-        [p("Business Auto", bold=True, color=WHITE), p("Limit", bold=True, color=WHITE, align=TA_CENTER)],
-        [p("BI per Person"),                p(fmt(data.get("auto_bi_person","—")), align=TA_CENTER)],
-        [p("BI per Accident"),              p(fmt(data.get("auto_bi_acc",   "—")), align=TA_CENTER)],
-        [p("Property Damage per Accident"), p(fmt(data.get("auto_pd",       "—")), align=TA_CENTER)],
-        [p("Collision"),                    p("Excluded", align=TA_CENTER)],
-        [p("Comprehensive"),                p("Excluded", align=TA_CENTER)],
-        [p(""),                             p("")],
-    ])
-
-    story.append(side_by_side(gl_cov, auto_cov))
-    story.append(Spacer(1, 6))
-
-    # ── Dynamic Header Column Text Assignment
-    right_column_header = custom_header_text if show_payment_header else ""
-
-    # ── Premium tables
-    gl_prem = build_table([
-        [p("GL Premium Summary", bold=True, color=WHITE), p(right_column_header, bold=True, color=WHITE, align=TA_CENTER)],
-        [p("Premium"),           p(fmt(data.get("gl_premium",      "—"), currency=True), align=TA_RIGHT)],
-        [p("Surplus Lines Tax"), p(fmt(data.get("gl_surplus_tax",  "—"), currency=True), align=TA_RIGHT)],
-        [p("Stamping Fee"),      p(fmt(data.get("gl_stamp_fee",    "—"), currency=True), align=TA_RIGHT)],
-        [p("Program Mgmt Fee"),  p(fmt(data.get("gl_platform_fee", "—"), currency=True), align=TA_RIGHT)],
-        [p("Total & Taxes / Fees", bold=True, color=WHITE), p(fmt(data.get("gl_total_premium","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
-    ], total_row=True)
-
-    auto_prem = build_table([
-        [p("Auto Premium Summary", bold=True, color=WHITE), p(right_column_header, bold=True, color=WHITE, align=TA_CENTER)],
-        [p("Annual Premium"),    p(fmt(data.get("auto_premium",     "—"), currency=True), align=TA_RIGHT)],
-        [p("Surplus Lines Tax"), p(fmt(data.get("auto_surplus_tax", "—"), currency=True), align=TA_RIGHT)],
-        [p("Stamping Fee"),      p(fmt(data.get("auto_stamp_fee",   "—"), currency=True), align=TA_RIGHT)],
-        [p("Risk Mgmt Fee"),     p(fmt(data.get("auto_tech_fee",    "—"), currency=True), align=TA_RIGHT)],
-        [p("Total", bold=True, color=WHITE), p(fmt(data.get("auto_total","—"), currency=True), bold=True, color=WHITE, align=TA_RIGHT)],
-    ], total_row=True)
-
-    story.append(side_by_side(gl_prem, auto_prem))
-    story.append(Spacer(1, 10))
-
-    # ── Grand total
-    grand = Table([[
-        p("TOTAL ANNUAL COST — ALL COVERAGES", bold=True, color=WHITE, size=11),
-        p(grand_total_fmt, bold=True, color=WHITE, size=14, align=TA_RIGHT),
-    ]], colWidths=[PW * 0.68, PW * 0.32])
-    grand.setStyle(TableStyle([
-        ("BACKGROUND",    (0,0),(-1,-1), GOLD),
-        ("TOPPADDING",    (0,0),(-1,-1), 12),
-        ("BOTTOMPADDING", (0,0),(-1,-1), 12),
-        ("LEFTPADDING",   (0,0),(-1,-1), 14),
-        ("RIGHTPADDING",  (0,0),(-1,-1), 14),
-        ("VALIGN",        (0,0),(-1,-1), "MIDDLE"),
-        ("ALIGN",         (1,0),(1,0),   "RIGHT"),
-    ]))
-    story.append(grand)
-
-    doc.build(story)
-    return buffer.getvalue()
-
-
-# ── 7. SIDEBAR CONTROLS
-st.sidebar.markdown("### ⚙️ Premium Table Controls")
-show_billing_info = st.sidebar.checkbox("Show Billing Info Header", value=True)
-plan_label = "Agency Bill" if show_billing_info else ""
-
-
-# ── 8. MAIN APP INTERFACE
-st.markdown("""
-<div class="hero-banner">
-    <div class="hero-badge">🛡️ Insurance</div>
-    <div class="hero-title">AdventureShield</div>
-    <div class="hero-title" style="color: #2E7D8C;">Proposal Builder</div>
-    <div class="hero-subtitle">Upload your carrier documents — we'll sort, reorder, and package them automatically.</div>
-</div>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="section-header">📂 Upload Documents</div>', unsafe_allow_html=True)
-files = st.file_uploader(
-    "Drop your quote PDFs here or click to browse",
-    type="pdf", accept_multiple_files=True, label_visibility="collapsed"
-)
-
-if files:
-    buckets = {name: [] for name in MASTER_ORDER}
-    buckets["Unclassified/Misc"] = []
-
-    with st.spinner("🔍 Analyzing and classifying pages..."):
-        for f in files:
-            reader = pypdf.PdfReader(f)
-            for page in reader.pages:
-                text = page.extract_text() or ""
-                category = classify_page(text)
-                buckets[category].append(page)
-
-    st.markdown('<div class="section-header">📋 Document Classification</div>', unsafe_allow_html=True)
-
-    cards_html = '<div class="status-grid">'
-    for category in MASTER_ORDER:
-        count = len(buckets[category])
-        if count > 0:
-            cards_html += f"""<div class="status-card success"><div class="status-icon">✅</div><div><div class="status-label">{category}</div><div class="status-count">{count} page{"s" if count != 1 else ""} found</div></div></div>"""
-        else:
-            cards_html += f"""<div class="status-card warning"><div class="status-icon">⚠️</div><div><div class="status-label">{category}</div><div class="status-count">No pages found</div></div></div>"""
-
-    misc_count = len(buckets["Unclassified/Misc"])
-    if misc_count > 0:
-        cards_html += f"""<div class="status-card error"><div class="status-icon">❓</div><div><div class="status-label">Unclassified / Misc</div><div class="status-count">{misc_count} page{"s" if misc_count != 1 else ""} — will append at end</div></div></div>"""
-    cards_html += '</div>'
-    st.markdown(cards_html, unsafe_allow_html=True)
-
-    st.markdown('<div class="section-header">🚀 Generate Package</div>', unsafe_allow_html=True)
-    if st.button("GENERATE ORDERED PACKAGE + COVERAGE SUMMARY"):
-        with st.spinner("Building your package..."):
-            writer = pypdf.PdfWriter()
-            for category in MASTER_ORDER:
-                for page in buckets[category]:
-                    writer.add_page(page)
-            for page in buckets["Unclassified/Misc"]:
-                writer.add_page(page)
-            output_buffer = io.BytesIO()
-            writer.write(output_buffer)
-
-            coverage_data = extract_coverage_data(buckets)
-            summary_pdf_bytes = generate_summary_pdf(
-                coverage_data, 
-                show_payment_header=show_billing_info, 
-                custom_header_text=plan_label
-            )
-
-        st.success("✅ Package ready — download your files below!")
-        st.markdown('<div class="section-header">💾 Downloads</div>', unsafe_allow_html=True)
-
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button(
-                label="📦 Download Ordered Package",
-                data=output_buffer.getvalue(),
-                file_name="AdventureShield_Proposal_Package.pdf",
-                mime="application/pdf"
-            )
-        with col2:
-            st.download_button(
-                label="📄 Download Coverage Summary",
-                data=summary_pdf_bytes,
-                file_name="AdventureShield_Coverage_Summary.pdf",
-                mime="application/pdf"
-            )
-
-        del output_buffer
-        del summary_pdf_bytes
-        gc.collect()
+            ("VALIGN",        (0,0), (-
